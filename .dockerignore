@@ -1,0 +1,9 @@
+.git
+.env
+vendor
+node_modules
+public/build
+cv_client/.venv
+cv_client/.smart-mirror
+cv_client/models/*.task
+storage/logs/*

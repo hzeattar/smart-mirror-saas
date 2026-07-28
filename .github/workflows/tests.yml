@@ -1,0 +1,32 @@
+name: Tests
+on:
+  push:
+  pull_request:
+
+jobs:
+  laravel:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix: { php: ['8.3', '8.4'] }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with: { php-version: '${{ matrix.php }}', extensions: mbstring, pdo_sqlite, fileinfo, intl, coverage: none }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: composer install --no-interaction --prefer-dist
+      - run: npm install
+      - run: npm run build
+      - run: cp .env.example .env && php artisan key:generate
+      - run: touch database/database.sqlite
+      - run: php artisan test
+      - run: vendor/bin/pint --test
+
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - run: pip install numpy
+      - run: cd cv_client && python -m unittest discover tests
