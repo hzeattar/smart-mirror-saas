@@ -1,13 +1,11 @@
-# Triggered after all source parts were uploaded.
 name: Materialize project source
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - '.bootstrap/source.part.*'
-      - '.github/workflows/bootstrap-deploy.yml'
+  pull_request_target:
+    types:
+      - opened
+      - synchronize
+      - reopened
   workflow_dispatch:
 
 permissions:
@@ -19,25 +17,23 @@ concurrency:
 
 jobs:
   materialize:
+    if: github.event_name == 'workflow_dispatch' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'bootstrap-materialize')
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
+      - name: Checkout trusted main branch
         uses: actions/checkout@v4
         with:
+          ref: main
           fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Reconstruct and verify source archive
         shell: bash
         run: |
           set -euo pipefail
-          test -f .bootstrap/source.part.00
-          test -f .bootstrap/source.part.01
-          test -f .bootstrap/source.part.02
-          test -f .bootstrap/source.part.03
-          test -f .bootstrap/source.part.04
-          test -f .bootstrap/source.part.05
-          test -f .bootstrap/source.part.06
-          test -f .bootstrap/source.part.07
+          for part in 00 01 02 03 04 05 06 07; do
+            test -f ".bootstrap/source.part.${part}"
+          done
           cat .bootstrap/source.part.00 \
               .bootstrap/source.part.01 \
               .bootstrap/source.part.02 \
@@ -64,7 +60,7 @@ jobs:
           test -f resources/js/App.vue
           test -f cv_client/main.py
 
-      - name: Commit complete project
+      - name: Commit complete project to main
         shell: bash
         run: |
           set -euo pipefail
