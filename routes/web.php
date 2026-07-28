@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Controllers\SpaController;
 use Illuminate\Support\Facades\Route;
 
-Route::view('/{path?}', 'app')->where('path', '^(?!api|up|storage).*$');
+Route::get('/frontend-status', [SpaController::class, 'status']);
+Route::get('/{path?}', SpaController::class)->where('path', '^(?!api|up|storage|build|frontend-status).*$');
