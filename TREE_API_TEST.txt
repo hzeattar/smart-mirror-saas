@@ -1,0 +1,1 @@
+Git Data API inline content test.
