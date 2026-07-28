@@ -11,7 +11,6 @@ use App\Http\Controllers\Api\MirrorAuthController;
 use App\Http\Controllers\Api\MirrorController;
 use Illuminate\Support\Facades\Route;
 
-Route::get('/health', fn () => ['ok' => true, 'time' => now()->toIso8601String()]);
 Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:10,1');
 Route::post('/mirrors/pair', [MirrorAuthController::class, 'pair'])->middleware('throttle:20,1');
 
