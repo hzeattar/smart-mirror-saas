@@ -2,6 +2,7 @@
 set -eu
 
 mkdir -p storage/framework/cache storage/framework/sessions storage/framework/views storage/logs bootstrap/cache
+export LOG_CHANNEL="${LOG_CHANNEL:-stderr}"
 touch database/database.sqlite
 
 if [ -n "${DATABASE_URL:-}" ] && [ -z "${DB_CONNECTION:-}" ]; then
@@ -26,5 +27,5 @@ php artisan config:cache
 php artisan route:cache
 php artisan view:cache
 
-php artisan queue:work --sleep=2 --tries=2 --timeout=180 --max-time=3600 &
+php artisan queue:work --sleep=2 --tries=2 --timeout=180 &
 exec php artisan serve --host=0.0.0.0 --port="${PORT:-8080}"
