@@ -53,7 +53,7 @@ fi
 
 prepare_sqlite() {
   export DB_CONNECTION=sqlite
-  export DB_DATABASE="${DB_DATABASE:-/app/database/database.sqlite}"
+  export DB_DATABASE="/app/database/database.sqlite"
   unset DB_URL DATABASE_URL DB_HOST DB_PORT DB_USERNAME DB_PASSWORD 2>/dev/null || true
   touch "$DB_DATABASE"
   log "Using SQLite database at $DB_DATABASE"
@@ -100,26 +100,37 @@ log "Creating public storage link"
 php artisan storage:link >/dev/null 2>&1 || true
 
 log "Caching production configuration"
-php artisan config:cache
-php artisan route:cache
-php artisan view:cache
+php artisan config:cache || log "WARNING: config cache could not be created"
+php artisan route:cache || log "WARNING: route cache could not be created"
+php artisan view:cache || log "WARNING: view cache could not be created"
 
-log "Verifying Laravel health route"
+log "Verifying Laravel health route and dashboard"
 if ! php -r '
 $port = getenv("PORT") ?: "8080";
-$url = "http://127.0.0.1:".$port."/up";
-for ($i = 0; $i < 40; $i++) {
-    $context = stream_context_create(["http" => ["timeout" => 1, "ignore_errors" => true]]);
-    $body = @file_get_contents($url, false, $context);
-    $status = $http_response_header[0] ?? "";
-    if ($body !== false && str_contains($status, " 200 ")) {
-        exit(0);
+$urls = [
+    "http://127.0.0.1:".$port."/up",
+    "http://127.0.0.1:".$port."/",
+];
+foreach ($urls as $url) {
+    $ok = false;
+    for ($i = 0; $i < 40; $i++) {
+        $context = stream_context_create(["http" => ["timeout" => 1, "ignore_errors" => true]]);
+        $body = @file_get_contents($url, false, $context);
+        $status = $http_response_header[0] ?? "";
+        if ($body !== false && str_contains($status, " 200 ")) {
+            $ok = true;
+            break;
+        }
+        usleep(250000);
     }
-    usleep(250000);
+    if (! $ok) {
+        fwrite(STDERR, "Readiness URL failed: ".$url.PHP_EOL);
+        exit(1);
+    }
 }
-exit(1);
+exit(0);
 '; then
-  log "ERROR: Laravel /up did not return HTTP 200"
+  log "ERROR: Laravel readiness checks did not return HTTP 200"
   cat /tmp/smart-mirror-web.log >&2 || true
   exit 1
 fi
