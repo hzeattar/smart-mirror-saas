@@ -1,6 +1,15 @@
 {
   "$schema": "https://schema.railpack.com",
-  "provider": "php",
+  "steps": {
+    "build": {
+      "commands": [
+        "...",
+        "npm install --no-audit --no-fund",
+        "npm run build",
+        "test -f public/build/manifest.json"
+      ]
+    }
+  },
   "deploy": {
     "startCommand": "bash start-container.sh"
   }
