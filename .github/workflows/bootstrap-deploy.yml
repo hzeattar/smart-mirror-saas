@@ -1,3 +1,4 @@
+# Triggered after all source parts were uploaded.
 name: Materialize project source
 
 on:
