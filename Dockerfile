@@ -20,7 +20,8 @@ RUN apk add --no-cache bash libpq-dev icu-dev libzip-dev oniguruma-dev \
 WORKDIR /app
 COPY --from=vendor /app /app
 COPY --from=frontend /app/public/build /app/public/build
-RUN chmod +x scripts/start.sh && chown -R www-data:www-data storage bootstrap/cache database public
+RUN chmod +x scripts/start.sh \
+    && chown -R www-data:www-data storage bootstrap/cache database public
 USER www-data
 EXPOSE 8080
 CMD ["./scripts/start.sh"]
