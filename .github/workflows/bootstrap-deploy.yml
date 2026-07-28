@@ -1,6 +1,9 @@
 name: Materialize project source
 
 on:
+  push:
+    branches:
+      - main
   pull_request_target:
     types:
       - opened
@@ -17,7 +20,7 @@ concurrency:
 
 jobs:
   materialize:
-    if: github.event_name == 'workflow_dispatch' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'bootstrap-materialize')
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'bootstrap-materialize')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout trusted main branch
@@ -51,6 +54,7 @@ jobs:
           set -euo pipefail
           rm -rf .bootstrap
           rm -f .github/workflows/bootstrap-deploy.yml
+          rm -f BOOTSTRAP_TRIGGER.md
           tar --extract --gzip --file=/tmp/smart-mirror-source.tar.gz --directory=.
           test -f artisan
           test -f composer.json
