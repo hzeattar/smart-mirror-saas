@@ -10,13 +10,16 @@ from .fitting import estimate_body_measurements, fit_confidence, recommend_size
 from .gestures import GestureEngine, GestureStatus
 from .hand_tracker import HandTracker
 from .interaction import CursorState, HandCursor
+from .lower_overlay import lower_body_ready, overlay_trousers
 from .overlay import overlay_garment
 from .pose_tracker import PoseTracker
 from .smart_ui import SmartUiModel, clicked_action, draw_smart_ui
 
 
 class SmartMirrorAppV2(SmartMirrorApp):
-    """Phase 1 retail interaction client with smart cursor and compact carousel."""
+    """Retail interaction client with smart cursor and category-aware fallback rendering."""
+
+    LOWER_GARMENT_TYPES = {"trousers", "pants", "jeans"}
 
     def __init__(self, args):
         super().__init__(args)
@@ -27,9 +30,49 @@ class SmartMirrorAppV2(SmartMirrorApp):
             return ""
         return self.products[(self.product_index + delta) % len(self.products)].name
 
+    def _garment_type(self) -> str:
+        return str(self.product.garment_type or "top").strip().lower()
+
     def on_mouse(self, event, x, y, _flags, _parameter) -> None:
         if event == cv2.EVENT_LBUTTONUP:
             self.handle_action(clicked_action(self.hitboxes, x, y))
+
+    def _render_current_garment(self, frame, pose, selected_size: dict | None):
+        garment_type = self._garment_type()
+        if garment_type in self.LOWER_GARMENT_TYPES:
+            if not lower_body_ready(pose):
+                return frame, False
+
+            waist_scale = 1.10
+            if selected_size and self.body.waist_width_cm:
+                garment_waist = self._number(selected_size.get("waist_width_cm"))
+                if garment_waist > 0:
+                    ratio = garment_waist / self.body.waist_width_cm
+                    waist_scale *= max(0.90, min(1.18, ratio))
+
+            frame, quad = overlay_trousers(
+                frame,
+                self.garment,
+                pose,
+                waist_width_scale=waist_scale,
+                ankle_width_scale=1.18,
+                texture_anchor=self.product.texture_anchor,
+            )
+            return frame, quad is not None
+
+        top_scale, bottom_scale, hem_extension, top_offset, preserve_forearms = self.fit_parameters(selected_size)
+        frame, quad = overlay_garment(
+            frame,
+            self.garment,
+            pose,
+            top_width_scale=top_scale,
+            bottom_width_scale=bottom_scale,
+            top_offset_ratio=top_offset,
+            hem_extension_ratio=hem_extension,
+            preserve_forearms=preserve_forearms,
+            texture_anchor=self.product.texture_anchor,
+        )
+        return frame, quad is not None
 
     def run(self) -> None:
         self.setup_catalog()
@@ -92,6 +135,8 @@ class SmartMirrorAppV2(SmartMirrorApp):
                     self.last_pose_at = now
                 pose = self.last_pose if self.last_pose and now - self.last_pose_at < 0.45 else None
 
+                garment_rendered = False
+                lower_body_required = False
                 if pose:
                     shoulder_cm = self.calibration.estimate_cm(pose.shoulder_pixels)
                     self.body = estimate_body_measurements(
@@ -102,18 +147,8 @@ class SmartMirrorAppV2(SmartMirrorApp):
                     )
                     self.recommendation = recommend_size(self.product.sizes, self.body)
                     selected_size, _ = self.selected_size()
-                    top_scale, bottom_scale, hem_extension, top_offset, preserve_forearms = self.fit_parameters(selected_size)
-                    frame, _quad = overlay_garment(
-                        frame,
-                        self.garment,
-                        pose,
-                        top_width_scale=top_scale,
-                        bottom_width_scale=bottom_scale,
-                        top_offset_ratio=top_offset,
-                        hem_extension_ratio=hem_extension,
-                        preserve_forearms=preserve_forearms,
-                        texture_anchor=self.product.texture_anchor,
-                    )
+                    frame, garment_rendered = self._render_current_garment(frame, pose, selected_size)
+                    lower_body_required = self._garment_type() in self.LOWER_GARMENT_TYPES and not garment_rendered
 
                 _selected_size, selected_label = self.selected_size()
                 confidence = fit_confidence(
@@ -123,13 +158,23 @@ class SmartMirrorAppV2(SmartMirrorApp):
                 )
 
                 if pending_snapshot:
-                    self.capture_snapshot(frame.copy(), selected_label, confidence, now)
+                    if garment_rendered:
+                        self.capture_snapshot(frame.copy(), selected_label, confidence, now)
+                    else:
+                        self.snapshot_message = "SHOW REQUIRED BODY AREA FIRST"
+                        self.snapshot_message_until = now + 2.5
 
                 if hand_tracker and self.args.gesture_debug:
                     hand_tracker.draw(frame)
 
                 if now >= self.snapshot_message_until:
                     self.snapshot_message = ""
+
+                gesture_label = self.gesture_status.active_label
+                gesture_progress = self.gesture_status.progress
+                if lower_body_required:
+                    gesture_label = "STEP BACK: SHOW HIPS AND FEET"
+                    gesture_progress = 0.0
 
                 self.hitboxes = draw_smart_ui(
                     frame,
@@ -145,8 +190,8 @@ class SmartMirrorAppV2(SmartMirrorApp):
                         auto_size=self.auto_size,
                         previous_name=self._neighbour_name(-1),
                         next_name=self._neighbour_name(1),
-                        gesture_label=self.gesture_status.active_label,
-                        gesture_progress=self.gesture_status.progress,
+                        gesture_label=gesture_label,
+                        gesture_progress=gesture_progress,
                         controls_visible=self.controls_visible,
                         snapshot_message=self.snapshot_message,
                         cursor_visible=self.cursor_state.visible,
@@ -181,7 +226,11 @@ class SmartMirrorAppV2(SmartMirrorApp):
                 elif key in (ord("f"), ord("F")):
                     self.toggle_fullscreen()
                 elif key in (ord("s"), ord("S")):
-                    self.capture_snapshot(frame.copy(), selected_label, confidence, now)
+                    if garment_rendered:
+                        self.capture_snapshot(frame.copy(), selected_label, confidence, now)
+                    else:
+                        self.snapshot_message = "SHOW REQUIRED BODY AREA FIRST"
+                        self.snapshot_message_until = now + 2.5
 
                 if self.api and now - last_heartbeat > 30:
                     try:
