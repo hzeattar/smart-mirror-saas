@@ -21,12 +21,6 @@ from .pose_tracker import PoseTracker
 
 
 class SmartMirrorApp:
-    PROFILE_WIDTHS = {
-        "slim": (1.22, 1.08),
-        "regular": (1.32, 1.18),
-        "relaxed": (1.42, 1.28),
-        "oversized": (1.54, 1.38),
-    }
     WINDOW_NAME = "Smart Mirror — Q to exit"
 
     def __init__(self, args):
@@ -43,7 +37,7 @@ class SmartMirrorApp:
         self.auto_size = True
         self.manual_size_index = 0
         self.recommendation: SizeRecommendation | None = None
-        self.body = BodyMeasurements(None, None, None, None)
+        self.body = BodyMeasurements(None, None, None, None, None)
         self.hitboxes = {}
         self.fullscreen = False
         self.last_pose = None
@@ -70,11 +64,20 @@ class SmartMirrorApp:
                             "label": "M",
                             "shoulder_width_cm": self.args.reference_shoulder_cm,
                             "chest_width_cm": self.args.reference_shoulder_cm * 1.15,
+                            "waist_width_cm": self.args.reference_shoulder_cm,
+                            "hip_width_cm": self.args.reference_shoulder_cm * 1.04,
+                            "fit_ease_cm": 4,
                             "height_cm": 68,
                         }
                     ],
                     price=0,
                     currency="EGP",
+                    fit_profile={
+                        "shoulder_expand": 0.10,
+                        "top_offset_ratio": 0.07,
+                        "height_ratio": 1.28,
+                        "forearm_occlusion": True,
+                    },
                 )
             ]
             return
@@ -128,6 +131,9 @@ class SmartMirrorApp:
             return None, "--"
         if self.auto_size and self.recommendation:
             return self.recommendation.size, self.recommendation.label
+        if self.auto_size:
+            selected = sizes[len(sizes) // 2]
+            return selected, self._size_label(selected)
         self.manual_size_index %= len(sizes)
         selected = sizes[self.manual_size_index]
         return selected, self._size_label(selected)
@@ -143,13 +149,26 @@ class SmartMirrorApp:
         except (TypeError, ValueError):
             return fallback
 
-    def fit_parameters(self, selected_size: dict | None) -> tuple[float, float, float]:
-        top_scale, bottom_scale = self.PROFILE_WIDTHS.get(
-            (self.product.fit_profile or "regular").lower(),
-            self.PROFILE_WIDTHS["regular"],
-        )
+    @staticmethod
+    def _boolean(value, fallback: bool = True) -> bool:
+        if value is None:
+            return fallback
+        if isinstance(value, str):
+            return value.strip().lower() not in {"0", "false", "off", "no"}
+        return bool(value)
+
+    def fit_parameters(self, selected_size: dict | None) -> tuple[float, float, float, float, bool]:
+        profile = self.product.fit_profile if isinstance(self.product.fit_profile, dict) else {}
+        shoulder_expand = max(0.0, min(0.5, self._number(profile.get("shoulder_expand"), 0.10)))
+        top_scale = 1.22 + shoulder_expand
+        bottom_scale = 1.10 + shoulder_expand * 0.80
+        top_offset = max(-0.15, min(0.35, self._number(profile.get("top_offset_ratio"), 0.07)))
+        height_ratio = max(0.90, min(1.80, self._number(profile.get("height_ratio"), 1.28)))
+        preserve_forearms = self._boolean(profile.get("forearm_occlusion"), True)
+        hem_extension = max(0.12, min(0.55, height_ratio - 1.0))
+
         if not selected_size:
-            return top_scale, bottom_scale, 0.20
+            return top_scale, bottom_scale, hem_extension, top_offset, preserve_forearms
 
         if self.body.shoulder_width_cm:
             garment_shoulder = self._number(selected_size.get("shoulder_width_cm"))
@@ -163,13 +182,13 @@ class SmartMirrorApp:
                 ratio = garment_chest / self.body.chest_width_cm
                 bottom_scale *= max(0.90, min(1.18, ratio))
 
-        hem_extension = 0.20
         if self.body.torso_height_cm:
             garment_height = self._number(selected_size.get("height_cm"))
             if garment_height > 0:
-                hem_extension = max(0.14, min(0.52, garment_height / self.body.torso_height_cm - 1.0))
+                measured_extension = garment_height / self.body.torso_height_cm - 1.0
+                hem_extension = max(0.12, min(0.55, measured_extension * 0.70 + hem_extension * 0.30))
 
-        return top_scale, bottom_scale, hem_extension
+        return top_scale, bottom_scale, hem_extension, top_offset, preserve_forearms
 
     def handle_action(self, action: str | None) -> None:
         if action == "previous":
@@ -233,21 +252,23 @@ class SmartMirrorApp:
                     )
                     self.recommendation = recommend_size(self.product.sizes, self.body)
                     selected_size, _ = self.selected_size()
-                    top_scale, bottom_scale, hem_extension = self.fit_parameters(selected_size)
+                    top_scale, bottom_scale, hem_extension, top_offset, preserve_forearms = self.fit_parameters(selected_size)
                     frame, _quad = overlay_garment(
                         frame,
                         self.garment,
                         pose,
                         top_width_scale=top_scale,
                         bottom_width_scale=bottom_scale,
+                        top_offset_ratio=top_offset,
                         hem_extension_ratio=hem_extension,
-                        preserve_forearms=True,
+                        preserve_forearms=preserve_forearms,
+                        texture_anchor=self.product.texture_anchor,
                     )
 
                     for point in (pose.left_shoulder, pose.right_shoulder):
                         cv2.circle(frame, (int(point.x), int(point.y)), 5, (88, 224, 181), -1)
 
-                selected_size, selected_label = self.selected_size()
+                _selected_size, selected_label = self.selected_size()
                 confidence = fit_confidence(
                     pose.visibility if pose else 0.0,
                     self.recommendation,
@@ -259,8 +280,8 @@ class SmartMirrorApp:
                     else "Shoulder: calibrate at 2 metres for cm"
                 )
                 chest_text = (
-                    f"Estimated chest width: {self.body.chest_width_cm:.1f} cm"
-                    if self.body.chest_width_cm is not None
+                    f"Chest: {self.body.chest_width_cm:.1f} cm  |  Waist: {self.body.waist_width_cm:.1f} cm"
+                    if self.body.chest_width_cm is not None and self.body.waist_width_cm is not None
                     else "Automatic size uses calibrated body proportions"
                 )
                 self.hitboxes = draw_mirror_ui(
