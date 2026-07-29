@@ -52,7 +52,12 @@ class SmartMirrorApi:
         self.cache_dir = token_file.parent / "garment-cache"
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.session = requests.Session()
-        self.session.headers.update({"Accept": "application/json"})
+        self.session.headers.update(
+            {
+                "Accept": "application/json",
+                "User-Agent": "SmartMirrorSaaS-CVClient/2.1 (+https://smart-mirror-saas-production.up.railway.app)",
+            }
+        )
         if token_file.exists():
             self.set_token(token_file.read_text(encoding="utf-8").strip())
 
@@ -114,7 +119,7 @@ class SmartMirrorApi:
             if cached is not None:
                 return cached
 
-        response = self.session.get(url, timeout=60)
+        response = self.session.get(url, timeout=60, allow_redirects=True)
         response.raise_for_status()
         image = self._decode_image(response.content)
         if image is None:

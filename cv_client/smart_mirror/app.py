@@ -107,15 +107,34 @@ class SmartMirrorApp:
     def load_product(self, index: int) -> None:
         if not self.products:
             return
-        self.product_index = index % len(self.products)
-        self.manual_size_index = 0
-        self.recommendation = None
-        product = self.product
-        if self.api:
-            self.garment = self.api.download_texture(product)
-        if self.garment is None:
-            raise RuntimeError(f"Product '{product.name}' has no downloadable garment texture.")
-        print(f"Selected product: {product.name} / {product.formatted_price()}")
+        failures = []
+
+        for attempt in range(len(self.products)):
+            candidate_index = (index + attempt) % len(self.products)
+            product = self.products[candidate_index]
+            garment = None
+
+            if self.api:
+                try:
+                    garment = self.api.download_texture(product)
+                except Exception as exc:
+                    failures.append(f"{product.name}: {exc}")
+                    print(f"Garment download warning: skipping '{product.name}' ({exc})")
+                    continue
+
+            if garment is None:
+                failures.append(f"{product.name}: no downloadable garment texture")
+                print(f"Garment download warning: skipping '{product.name}' (no texture)")
+                continue
+
+            self.product_index = candidate_index
+            self.manual_size_index = 0
+            self.recommendation = None
+            self.garment = garment
+            print(f"Selected product: {product.name} / {product.formatted_price()}")
+            return
+
+        raise RuntimeError("No catalog products have downloadable garment textures: " + "; ".join(failures))
 
     def change_product(self, delta: int) -> None:
         self.load_product(self.product_index + delta)

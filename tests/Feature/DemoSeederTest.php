@@ -23,6 +23,8 @@ class DemoSeederTest extends TestCase
 
         foreach ($products as $product) {
             $this->assertCount(4, $product->sizingCharts);
+            $this->assertStringStartsWith('/demo-garments/', $product->base_image_url);
+            $this->assertStringStartsWith('/demo-garments/', $product->texture_image_url);
 
             foreach ($product->sizingCharts as $size) {
                 $this->assertNotNull($size->shoulder_width_cm);

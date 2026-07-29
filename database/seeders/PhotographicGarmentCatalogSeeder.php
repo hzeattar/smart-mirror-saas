@@ -49,6 +49,7 @@ class PhotographicGarmentCatalogSeeder extends Seeder
                 'garment_type' => 'tshirt',
                 'price' => 699,
                 'url' => 'https://commons.wikimedia.org/wiki/Special:Redirect/file/White-tshirt.jpg',
+                'local_asset' => '/demo-garments/real-mint-tshirt.webp',
                 'fit_profile' => [
                     'shoulder_expand' => 0.08,
                     'top_offset_ratio' => 0.06,
@@ -64,6 +65,7 @@ class PhotographicGarmentCatalogSeeder extends Seeder
                 'garment_type' => 'shirt',
                 'price' => 1099,
                 'url' => 'https://commons.wikimedia.org/wiki/Special:Redirect/file/Blue_Business_Shirt.jpg',
+                'local_asset' => '/demo-garments/real-mint-tshirt.webp',
                 'fit_profile' => [
                     'shoulder_expand' => 0.10,
                     'top_offset_ratio' => 0.05,
@@ -79,6 +81,7 @@ class PhotographicGarmentCatalogSeeder extends Seeder
                 'garment_type' => 'jacket',
                 'price' => 1599,
                 'url' => 'https://commons.wikimedia.org/wiki/Special:Redirect/file/Jean_jacket.jpg',
+                'local_asset' => '/demo-garments/real-navy-hoodie.webp',
                 'fit_profile' => [
                     'shoulder_expand' => 0.15,
                     'top_offset_ratio' => 0.04,
@@ -94,6 +97,7 @@ class PhotographicGarmentCatalogSeeder extends Seeder
                 'garment_type' => 'trousers',
                 'price' => 1199,
                 'url' => 'https://commons.wikimedia.org/wiki/Special:Redirect/file/Trousers-colourisolated.jpg',
+                'local_asset' => '/demo-garments/real-coral-polo.webp',
                 'fit_profile' => [
                     'waist_expand' => 0.06,
                     'height_ratio' => 2.20,
@@ -108,6 +112,7 @@ class PhotographicGarmentCatalogSeeder extends Seeder
                 'garment_type' => 'suit',
                 'price' => 2499,
                 'url' => 'https://commons.wikimedia.org/wiki/Special:Redirect/file/Man%27s_suit_jacket.jpg',
+                'local_asset' => '/demo-garments/real-navy-hoodie.webp',
                 'fit_profile' => [
                     'shoulder_expand' => 0.13,
                     'top_offset_ratio' => 0.04,
@@ -127,8 +132,8 @@ class PhotographicGarmentCatalogSeeder extends Seeder
                     'garment_type' => $item['garment_type'],
                     'fit_profile' => $item['fit_profile'],
                     'texture_anchor' => ['left' => 0.02, 'right' => 0.02, 'top' => 0.02, 'bottom' => 0.02],
-                    'base_image_url' => $item['url'],
-                    'texture_image_url' => $item['url'],
+                    'base_image_url' => $item['local_asset'],
+                    'texture_image_url' => $item['local_asset'],
                     'unit_price' => $item['price'],
                     'currency' => 'EGP',
                     'status' => ProductStatus::Active,
