@@ -1,0 +1,44 @@
+name: Phase 1 Real Garments Validation
+
+on:
+  push:
+    branches:
+      - phase-2-real-garments-smart-ui
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  cv-client-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: cv_client/requirements.txt
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r cv_client/requirements.txt
+
+      - name: Compile Python sources
+        run: python -m compileall -q cv_client
+
+      - name: Run CV client unit tests
+        env:
+          PYTHONPATH: cv_client
+        run: python -m unittest discover -s cv_client/tests -p 'test_*.py' -v
+
+      - name: Lint photographic catalog seeder
+        run: php -l database/seeders/PhotographicGarmentCatalogSeeder.php
+
+      - name: Lint database seeder
+        run: php -l database/seeders/DatabaseSeeder.php
