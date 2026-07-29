@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import urljoin
 
 import cv2
 import numpy as np
@@ -16,6 +16,30 @@ class CatalogProduct:
     texture_image_url: str | None
     base_image_url: str | None
     sizes: list[dict]
+    sku: str | None = None
+    description: str | None = None
+    price: float = 0.0
+    currency: str = "EGP"
+    garment_type: str = "top"
+    fit_profile: str = "regular"
+    texture_anchors: dict = field(default_factory=dict)
+
+    @classmethod
+    def from_api(cls, item: dict) -> "CatalogProduct":
+        allowed = cls.__dataclass_fields__.keys()
+        values = {key: item.get(key) for key in allowed if key in item}
+        values.setdefault("sizes", [])
+        values.setdefault("price", 0.0)
+        values.setdefault("currency", "EGP")
+        values.setdefault("garment_type", "top")
+        values.setdefault("fit_profile", "regular")
+        values.setdefault("texture_anchors", {})
+        return cls(**values)
+
+    def formatted_price(self) -> str:
+        value = float(self.price or 0)
+        amount = f"{value:,.0f}" if value.is_integer() else f"{value:,.2f}"
+        return f"{amount} {self.currency}"
 
 
 class SmartMirrorApi:
@@ -32,12 +56,16 @@ class SmartMirrorApi:
         self.token_file.parent.mkdir(parents=True, exist_ok=True)
         self.token_file.write_text(token, encoding="utf-8")
 
-    def pair(self, pairing_code: str, device_name: str, app_version: str = "1.0.0") -> dict:
-        response = self.session.post(f"{self.base_url}/api/mirrors/pair", json={
-            "pairing_code": pairing_code,
-            "device_name": device_name,
-            "app_version": app_version,
-        }, timeout=20)
+    def pair(self, pairing_code: str, device_name: str, app_version: str = "2.0.0") -> dict:
+        response = self.session.post(
+            f"{self.base_url}/api/mirrors/pair",
+            json={
+                "pairing_code": pairing_code,
+                "device_name": device_name,
+                "app_version": app_version,
+            },
+            timeout=20,
+        )
         response.raise_for_status()
         data = response.json()
         self.set_token(data["token"])
@@ -46,15 +74,16 @@ class SmartMirrorApi:
     def catalog(self) -> list[CatalogProduct]:
         response = self.session.get(f"{self.base_url}/api/mirror/catalog", timeout=20)
         response.raise_for_status()
-        return [CatalogProduct(**{k: item.get(k) for k in CatalogProduct.__annotations__}) for item in response.json()["products"]]
+        return [CatalogProduct.from_api(item) for item in response.json()["products"]]
 
     def heartbeat(self) -> None:
         self.session.post(f"{self.base_url}/api/mirror/heartbeat", timeout=8).raise_for_status()
 
     def download_texture(self, product: CatalogProduct) -> np.ndarray | None:
-        url = product.texture_image_url or product.base_image_url
-        if not url:
+        raw_url = product.texture_image_url or product.base_image_url
+        if not raw_url:
             return None
+        url = urljoin(f"{self.base_url}/", raw_url)
         response = self.session.get(url, timeout=30)
         response.raise_for_status()
         image = cv2.imdecode(np.frombuffer(response.content, np.uint8), cv2.IMREAD_UNCHANGED)
