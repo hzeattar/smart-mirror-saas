@@ -42,6 +42,7 @@ class Product extends Model
             'unit_price' => 'decimal:2',
             'status' => ProductStatus::class,
             'background_removal_status' => BackgroundRemovalStatus::class,
+            'fit_profile' => 'array',
             'texture_anchor' => 'array',
             'processed_at' => 'datetime',
         ];
