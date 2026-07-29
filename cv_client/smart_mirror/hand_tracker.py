@@ -93,6 +93,9 @@ class HandTracker:
             return "open_palm", min(1.0, 0.60 + max(0.0, spread - 1.0) * 0.20)
         if extended_count == 2 and extended[0] and extended[1]:
             return "two_fingers", 0.85
+        if extended_count == 1 and extended[0]:
+            straightness = min(1.0, max(0.0, cls._angle(points[5], points[6], points[8]) / 180.0))
+            return "point", max(0.72, straightness)
         if extended_count == 0 and fingertips_to_palm < palm_width * 0.95:
             return "fist", 0.88
         return "unknown", 0.35
