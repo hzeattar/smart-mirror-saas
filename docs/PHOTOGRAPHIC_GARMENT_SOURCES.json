@@ -1,0 +1,50 @@
+{
+  "purpose": "Demo-only photographic garment sources for Smart Mirror Phase 1. Production stores must replace these with their own SKU photography.",
+  "assets": [
+    {
+      "sku": "PHOTO-TSHIRT-001",
+      "file": "White-tshirt.jpg",
+      "source_page": "https://commons.wikimedia.org/wiki/File:White-tshirt.jpg",
+      "direct_url": "https://commons.wikimedia.org/wiki/Special:Redirect/file/White-tshirt.jpg",
+      "author": "Paulinaela",
+      "license": "CC0 1.0",
+      "category": "tshirt"
+    },
+    {
+      "sku": "PHOTO-SHIRT-001",
+      "file": "Blue Business Shirt.jpg",
+      "source_page": "https://commons.wikimedia.org/wiki/File:Blue_Business_Shirt.jpg",
+      "direct_url": "https://commons.wikimedia.org/wiki/Special:Redirect/file/Blue_Business_Shirt.jpg",
+      "author": "ChristianGlaeser",
+      "license": "CC BY-SA 3.0 / GFDL",
+      "category": "shirt"
+    },
+    {
+      "sku": "PHOTO-JACKET-001",
+      "file": "Jean jacket.jpg",
+      "source_page": "https://commons.wikimedia.org/wiki/File:Jean_jacket.jpg",
+      "direct_url": "https://commons.wikimedia.org/wiki/Special:Redirect/file/Jean_jacket.jpg",
+      "author": "NikosLikomitros",
+      "license": "CC0 1.0",
+      "category": "jacket"
+    },
+    {
+      "sku": "PHOTO-TROUSER-001",
+      "file": "Trousers-colourisolated.jpg",
+      "source_page": "https://commons.wikimedia.org/wiki/File:Trousers-colourisolated.jpg",
+      "direct_url": "https://commons.wikimedia.org/wiki/Special:Redirect/file/Trousers-colourisolated.jpg",
+      "author": "Ed Yourdon / Themightyquill",
+      "license": "CC BY-SA 2.0",
+      "category": "trousers"
+    },
+    {
+      "sku": "PHOTO-SUIT-001",
+      "file": "Man's suit jacket.jpg",
+      "source_page": "https://commons.wikimedia.org/wiki/File:Man%27s_suit_jacket.jpg",
+      "direct_url": "https://commons.wikimedia.org/wiki/Special:Redirect/file/Man%27s_suit_jacket.jpg",
+      "author": "Robert Sheie / Menswear Market",
+      "license": "CC BY 2.0",
+      "category": "suit"
+    }
+  ]
+}
