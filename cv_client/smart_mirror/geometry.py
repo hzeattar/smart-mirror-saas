@@ -72,6 +72,7 @@ class PoseGeometrySmoother:
             torso_pixels=self.torso.update(pose.torso_pixels),
             visibility=pose.visibility,
             arm_visibility=pose.arm_visibility,
+            estimated_hips=getattr(pose, "estimated_hips", False),
         )
         return type(pose)(**values)
 
