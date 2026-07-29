@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 
 from smart_mirror.gestures import GestureEngine
-from smart_mirror.hand_tracker import HandObservation, HandPoint
+from smart_mirror.hand_types import HandObservation, HandPoint
 
 
 def observation(gesture: str, x: float, y: float = 0.5, confidence: float = 0.95) -> HandObservation:
