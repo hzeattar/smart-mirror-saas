@@ -25,40 +25,26 @@ jobs:
           cache-dependency-path: cv_client/requirements-ci.txt
 
       - name: Install lightweight test dependencies
-        shell: bash
         run: |
-          set -o pipefail
-          python -m pip install --upgrade pip 2>&1 | tee pip-upgrade.log
-          python -m pip install -r cv_client/requirements-ci.txt 2>&1 | tee pip-install.log
+          python -m pip install --upgrade pip
+          python -m pip install -r cv_client/requirements-ci.txt
 
       - name: Compile Python sources
-        shell: bash
-        run: |
-          set -o pipefail
-          python -m compileall -q cv_client 2>&1 | tee python-compile.log
+        run: python -m compileall -q cv_client
 
       - name: Run CV client unit tests
-        shell: bash
         env:
           PYTHONPATH: cv_client
-        run: |
-          set -o pipefail
-          python -m unittest discover -s cv_client/tests -p 'test_*.py' -v 2>&1 | tee python-tests.log
+        run: python -m unittest discover -s cv_client/tests -p 'test_*.py' -v
+
+      - name: Set up PHP 8.3
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
 
       - name: Lint photographic catalog seeder
         run: php -l database/seeders/PhotographicGarmentCatalogSeeder.php
 
       - name: Lint database seeder
         run: php -l database/seeders/DatabaseSeeder.php
-
-      - name: Upload validation logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: phase-1-validation-logs
-          if-no-files-found: ignore
-          path: |
-            pip-upgrade.log
-            pip-install.log
-            python-compile.log
-            python-tests.log
