@@ -21,8 +21,8 @@ class CatalogProduct:
     price: float = 0.0
     currency: str = "EGP"
     garment_type: str = "top"
-    fit_profile: str = "regular"
-    texture_anchors: dict = field(default_factory=dict)
+    fit_profile: dict = field(default_factory=dict)
+    texture_anchor: dict = field(default_factory=dict)
 
     @classmethod
     def from_api(cls, item: dict) -> "CatalogProduct":
@@ -32,8 +32,8 @@ class CatalogProduct:
         values.setdefault("price", 0.0)
         values.setdefault("currency", "EGP")
         values.setdefault("garment_type", "top")
-        values.setdefault("fit_profile", "regular")
-        values.setdefault("texture_anchors", {})
+        values.setdefault("fit_profile", {})
+        values.setdefault("texture_anchor", {})
         return cls(**values)
 
     def formatted_price(self) -> str:
