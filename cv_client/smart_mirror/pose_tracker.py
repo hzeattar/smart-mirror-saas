@@ -6,7 +6,7 @@ from pathlib import Path
 import mediapipe as mp
 import numpy as np
 
-from .geometry import Point, distance
+from .geometry import Point, distance, midpoint
 
 
 @dataclass
@@ -24,6 +24,78 @@ class PoseFrame:
     torso_pixels: float
     visibility: float
     arm_visibility: float
+    estimated_hips: bool = False
+
+
+def _landmark_confidence(landmark) -> float:
+    visibility = float(getattr(landmark, "visibility", 1.0) or 0.0)
+    presence = float(getattr(landmark, "presence", 1.0) or 0.0)
+    return max(0.0, min(1.0, min(visibility, presence)))
+
+
+def _lerp_point(start: Point, end: Point, amount: float) -> Point:
+    amount = max(0.0, min(1.0, amount))
+    return Point(
+        start.x + (end.x - start.x) * amount,
+        start.y + (end.y - start.y) * amount,
+    )
+
+
+def estimate_hip_anchors(
+    left_shoulder: Point,
+    right_shoulder: Point,
+    actual_left_hip: Point | None = None,
+    actual_right_hip: Point | None = None,
+    left_hip_confidence: float = 0.0,
+    right_hip_confidence: float = 0.0,
+) -> tuple[Point, Point, bool]:
+    """Return stable hip anchors for upper-body and partially cropped camera views.
+
+    A normal retail mirror often frames the customer from the head to the waist. MediaPipe
+    can still provide reliable shoulders while hip landmarks become weak or fall outside the
+    image. The renderer only needs a stable lower torso boundary for tops, so a shoulder-based
+    estimate is preferable to rejecting the complete pose.
+    """
+
+    shoulder_width = max(1.0, distance(left_shoulder, right_shoulder))
+    shoulder_dx = right_shoulder.x - left_shoulder.x
+    shoulder_dy = right_shoulder.y - left_shoulder.y
+    axis_x = shoulder_dx / shoulder_width
+    axis_y = shoulder_dy / shoulder_width
+
+    # Perpendicular to the shoulder line, always directed down the image.
+    down_x = -axis_y
+    down_y = axis_x
+    if down_y < 0:
+        down_x *= -1
+        down_y *= -1
+
+    shoulder_center = midpoint(left_shoulder, right_shoulder)
+    torso_length = shoulder_width * 1.34
+    estimated_center = Point(
+        shoulder_center.x + down_x * torso_length,
+        shoulder_center.y + down_y * torso_length,
+    )
+    estimated_hip_width = shoulder_width * 0.88
+    half_width = estimated_hip_width / 2
+    estimated_left = Point(
+        estimated_center.x - axis_x * half_width,
+        estimated_center.y - axis_y * half_width,
+    )
+    estimated_right = Point(
+        estimated_center.x + axis_x * half_width,
+        estimated_center.y + axis_y * half_width,
+    )
+
+    left_conf = max(0.0, min(1.0, left_hip_confidence))
+    right_conf = max(0.0, min(1.0, right_hip_confidence))
+    left_blend = max(0.0, min(1.0, (left_conf - 0.20) / 0.45)) if actual_left_hip else 0.0
+    right_blend = max(0.0, min(1.0, (right_conf - 0.20) / 0.45)) if actual_right_hip else 0.0
+
+    left_hip = _lerp_point(estimated_left, actual_left_hip, left_blend) if actual_left_hip else estimated_left
+    right_hip = _lerp_point(estimated_right, actual_right_hip, right_blend) if actual_right_hip else estimated_right
+    estimated = left_blend < 0.85 or right_blend < 0.85
+    return left_hip, right_hip, estimated
 
 
 class PoseTracker:
@@ -46,9 +118,9 @@ class PoseTracker:
             base_options=base_options,
             running_mode=mp.tasks.vision.RunningMode.VIDEO,
             num_poses=1,
-            min_pose_detection_confidence=0.55,
-            min_pose_presence_confidence=0.55,
-            min_tracking_confidence=0.55,
+            min_pose_detection_confidence=0.35,
+            min_pose_presence_confidence=0.35,
+            min_tracking_confidence=0.35,
         )
         self.landmarker = mp.tasks.vision.PoseLandmarker.create_from_options(options)
 
@@ -62,41 +134,53 @@ class PoseTracker:
             return None
 
         landmarks = result.pose_landmarks[0]
-        torso_landmarks = [
-            landmarks[i]
-            for i in (self.LEFT_SHOULDER, self.RIGHT_SHOULDER, self.LEFT_HIP, self.RIGHT_HIP)
-        ]
-        visibility = min(float(getattr(item, "visibility", 1.0) or 0.0) for item in torso_landmarks)
-        if visibility < 0.45:
-            return None
-
-        arm_landmarks = [
-            landmarks[i]
-            for i in (self.LEFT_ELBOW, self.RIGHT_ELBOW, self.LEFT_WRIST, self.RIGHT_WRIST)
-        ]
-        arm_visibility = min(float(getattr(item, "visibility", 1.0) or 0.0) for item in arm_landmarks)
 
         def point(index: int) -> Point:
             landmark = landmarks[index]
             return Point(landmark.x * self.width, landmark.y * self.height)
 
+        left_shoulder_landmark = landmarks[self.LEFT_SHOULDER]
+        right_shoulder_landmark = landmarks[self.RIGHT_SHOULDER]
+        shoulder_visibility = min(
+            _landmark_confidence(left_shoulder_landmark),
+            _landmark_confidence(right_shoulder_landmark),
+        )
+        if shoulder_visibility < 0.28:
+            return None
+
         left_shoulder = point(self.LEFT_SHOULDER)
         right_shoulder = point(self.RIGHT_SHOULDER)
-        left_hip = point(self.LEFT_HIP)
-        right_hip = point(self.RIGHT_HIP)
+        shoulder_pixels = distance(left_shoulder, right_shoulder)
+        if shoulder_pixels < max(18.0, self.width * 0.025):
+            return None
+
+        actual_left_hip = point(self.LEFT_HIP)
+        actual_right_hip = point(self.RIGHT_HIP)
+        left_hip_confidence = _landmark_confidence(landmarks[self.LEFT_HIP])
+        right_hip_confidence = _landmark_confidence(landmarks[self.RIGHT_HIP])
+        left_hip, right_hip, estimated_hips = estimate_hip_anchors(
+            left_shoulder,
+            right_shoulder,
+            actual_left_hip,
+            actual_right_hip,
+            left_hip_confidence,
+            right_hip_confidence,
+        )
+
         left_elbow = point(self.LEFT_ELBOW)
         right_elbow = point(self.RIGHT_ELBOW)
         left_wrist = point(self.LEFT_WRIST)
         right_wrist = point(self.RIGHT_WRIST)
+        arm_landmarks = [
+            landmarks[i]
+            for i in (self.LEFT_ELBOW, self.RIGHT_ELBOW, self.LEFT_WRIST, self.RIGHT_WRIST)
+        ]
+        arm_visibility = min(_landmark_confidence(item) for item in arm_landmarks)
 
-        shoulder_mid = Point(
-            (left_shoulder.x + right_shoulder.x) / 2,
-            (left_shoulder.y + right_shoulder.y) / 2,
-        )
-        hip_mid = Point(
-            (left_hip.x + right_hip.x) / 2,
-            (left_hip.y + right_hip.y) / 2,
-        )
+        shoulder_mid = midpoint(left_shoulder, right_shoulder)
+        hip_mid = midpoint(left_hip, right_hip)
+        hip_visibility = min(left_hip_confidence, right_hip_confidence)
+        visibility = shoulder_visibility if estimated_hips else min(shoulder_visibility, max(0.30, hip_visibility))
 
         return PoseFrame(
             left_shoulder=left_shoulder,
@@ -107,11 +191,12 @@ class PoseTracker:
             right_elbow=right_elbow,
             left_wrist=left_wrist,
             right_wrist=right_wrist,
-            shoulder_pixels=distance(left_shoulder, right_shoulder),
+            shoulder_pixels=shoulder_pixels,
             hip_pixels=distance(left_hip, right_hip),
             torso_pixels=distance(shoulder_mid, hip_mid),
             visibility=visibility,
             arm_visibility=arm_visibility,
+            estimated_hips=estimated_hips,
         )
 
     def close(self) -> None:
