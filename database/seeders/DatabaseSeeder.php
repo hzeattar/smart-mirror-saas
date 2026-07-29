@@ -47,10 +47,10 @@ class DatabaseSeeder extends Seeder
             [
                 'category_id' => $tops->id,
                 'name' => 'Classic Smart Mirror T-Shirt',
-                'description' => 'Demo garment for the smart mirror catalog.',
+                'description' => 'Legacy fallback garment for the smart mirror catalog.',
                 'unit_price' => 799,
                 'currency' => 'EGP',
-                'status' => ProductStatus::Active,
+                'status' => ProductStatus::Inactive,
             ]
         );
 
@@ -65,6 +65,7 @@ class DatabaseSeeder extends Seeder
         $this->call([
             DemoGarmentCatalogSeeder::class,
             DemoGarmentFitMetadataSeeder::class,
+            PhotographicGarmentCatalogSeeder::class,
         ]);
 
         Mirror::query()->firstOrCreate(
