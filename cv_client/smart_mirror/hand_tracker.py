@@ -5,14 +5,13 @@ from math import acos, degrees, hypot
 from pathlib import Path
 
 import cv2
-import mediapipe as mp
 import numpy as np
 
 from .hand_types import HandObservation, HandPoint
 
 
 class HandTracker:
-    """MediaPipe Tasks hand tracking compatible with MediaPipe 0.10.30+."""
+    """MediaPipe Tasks hand tracking with lazy runtime dependency loading."""
 
     _FINGER_CHAINS = ((5, 6, 8), (9, 10, 12), (13, 14, 16), (17, 18, 20))
     _CONNECTIONS = (
@@ -31,12 +30,20 @@ class HandTracker:
         min_detection_confidence: float = 0.60,
         min_tracking_confidence: float = 0.55,
     ) -> None:
+        try:
+            import mediapipe as mp
+        except ImportError as exc:
+            raise RuntimeError(
+                "MediaPipe is required for live hand tracking. Install cv_client/requirements.txt."
+            ) from exc
+
         resolved_model = model_path or Path(__file__).resolve().parents[1] / "models" / "hand_landmarker.task"
         if not resolved_model.exists():
             raise FileNotFoundError(
                 f"MediaPipe hand model not found: {resolved_model}. Run download_model.py first."
             )
 
+        self._mp = mp
         self._last_observations: list[HandObservation] = []
         self._last_timestamp_ms = -1
 
@@ -117,7 +124,7 @@ class HandTracker:
 
         rgb = np.ascontiguousarray(frame[:, :, ::-1])
         result = self._landmarker.detect_for_video(
-            mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb),
+            self._mp.Image(image_format=self._mp.ImageFormat.SRGB, data=rgb),
             timestamp,
         )
 
