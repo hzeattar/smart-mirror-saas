@@ -66,6 +66,7 @@ def run(args: argparse.Namespace) -> int:
     print("[PASS] Pose and hand trackers initialized")
 
     pose_frames = 0
+    estimated_hip_frames = 0
     hand_frames = 0
     read_frames = 0
     started = time.monotonic()
@@ -84,14 +85,17 @@ def run(args: argparse.Namespace) -> int:
 
             if pose is not None:
                 pose_frames += 1
+                if pose.estimated_hips:
+                    estimated_hip_frames += 1
             if hands:
                 hand_frames += 1
 
             if args.preview:
                 hand_tracker.draw(frame)
+                pose_mode = "UPPER BODY" if pose is not None and pose.estimated_hips else "FULL BODY"
                 cv2.putText(
                     frame,
-                    f"Pose frames: {pose_frames} | Hand frames: {hand_frames}",
+                    f"Pose: {pose_frames} | Hands: {hand_frames} | {pose_mode}",
                     (20, 36),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.72,
@@ -101,7 +105,7 @@ def run(args: argparse.Namespace) -> int:
                 )
                 cv2.putText(
                     frame,
-                    "Stand in frame and show an open hand. Press Q to finish.",
+                    "Keep both shoulders visible and show an open hand. Press Q to finish.",
                     (20, 68),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.55,
@@ -120,10 +124,13 @@ def run(args: argparse.Namespace) -> int:
 
     check(read_frames > 0, f"Camera delivered {read_frames} frames", "Camera opened but returned no frames")
     print(f"[INFO] Pose detected in {pose_frames}/{read_frames} frames")
+    print(f"[INFO] Upper-body fallback used in {estimated_hip_frames}/{max(1, pose_frames)} pose frames")
     print(f"[INFO] Hands detected in {hand_frames}/{read_frames} frames")
 
     if pose_frames == 0:
-        print("[WARN] No body detected. Stand farther back with shoulders and hips visible.")
+        print("[WARN] No pose detected. Keep both shoulders visible, improve front lighting, and avoid backlighting.")
+    elif estimated_hip_frames == pose_frames:
+        print("[INFO] Hips were outside or weak; virtual hip anchors kept top-garment tracking active.")
     if hand_frames == 0:
         print("[WARN] No hand detected. Show an open palm in front of the camera with good lighting.")
 
