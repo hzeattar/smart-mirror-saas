@@ -11,6 +11,7 @@ use App\Enums\UserStatus;
 use App\Models\Mirror;
 use App\Models\Product;
 use App\Models\Tenant;
+use App\Models\TryOnBatch;
 use App\Models\TryOnJob;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -143,6 +144,106 @@ class TryOnJobTest extends TestCase
             ->assertOk()
             ->assertJsonCount(1, 'data')
             ->assertJsonPath('data.0.id', $job->public_id);
+    }
+
+    public function test_mirror_creates_and_reads_mock_try_on_batch(): void
+    {
+        Storage::fake('local');
+        config(['filesystems.default' => 'local', 'ai_tryon.provider' => 'mock']);
+
+        [$tenant, $mirror, $token, $product, $size] = $this->mirrorFixture();
+        $second = Product::query()->create([
+            'tenant_id' => $tenant->id,
+            'name' => 'Shirt',
+            'unit_price' => 900,
+            'currency' => 'EGP',
+            'status' => ProductStatus::Active,
+            'garment_type' => 'shirt',
+        ]);
+
+        $response = $this->withToken($token)->post('/api/mirror/try-on-batches', [
+            'product_ids' => [$product->id, $second->id],
+            'sizing_chart_id' => $size->id,
+            'snapshot' => UploadedFile::fake()->image('snapshot.jpg', 640, 480),
+        ])->assertCreated();
+
+        $batchId = $response->json('batch.id');
+        $this->assertDatabaseHas('try_on_batches', [
+            'public_id' => $batchId,
+            'tenant_id' => $tenant->id,
+            'mirror_id' => $mirror->id,
+            'status' => 'completed',
+            'outfit_count' => 2,
+        ]);
+        $this->assertSame(2, TryOnJob::query()->whereHas('batch', fn ($query) => $query->where('public_id', $batchId))->count());
+
+        $this->withToken($token)->getJson('/api/mirror/try-on-batches/'.$batchId)
+            ->assertOk()
+            ->assertJsonPath('batch.status', 'completed')
+            ->assertJsonPath('batch.completed_count', 2)
+            ->assertJsonCount(2, 'batch.jobs');
+    }
+
+    public function test_mirror_cannot_read_another_mirror_try_on_batch(): void
+    {
+        [$tenant, $mirror, $token] = $this->mirrorFixture();
+        $otherMirror = Mirror::query()->create([
+            'tenant_id' => $tenant->id,
+            'pairing_code' => 'BATCH123',
+            'api_token_hash' => hash('sha256', 'other-token'),
+            'location_name' => 'Other',
+            'status' => MirrorStatus::Paired,
+        ]);
+        $batch = TryOnBatch::query()->create([
+            'public_id' => (string) Str::uuid(),
+            'tenant_id' => $tenant->id,
+            'mirror_id' => $otherMirror->id,
+            'status' => 'queued',
+            'provider' => 'mock',
+            'input_image_path' => 'try-on/batches/example/input.jpg',
+        ]);
+
+        $this->withToken($token)->getJson('/api/mirror/try-on-batches/'.$batch->public_id)->assertNotFound();
+    }
+
+    public function test_purge_deletes_expired_batch_media_and_jobs(): void
+    {
+        Storage::fake('local');
+        config(['filesystems.default' => 'local']);
+
+        [$tenant, $mirror, , $product] = $this->mirrorFixture();
+        Storage::disk('local')->put('try-on/batches/old/input.jpg', 'input');
+        Storage::disk('local')->put('try-on/results/old.jpg', 'result');
+
+        $batch = TryOnBatch::query()->create([
+            'public_id' => (string) Str::uuid(),
+            'tenant_id' => $tenant->id,
+            'mirror_id' => $mirror->id,
+            'status' => 'completed',
+            'provider' => 'mock',
+            'input_image_path' => 'try-on/batches/old/input.jpg',
+            'outfit_count' => 1,
+            'completed_count' => 1,
+            'expires_at' => now()->subMinute(),
+        ]);
+        TryOnJob::query()->create([
+            'public_id' => (string) Str::uuid(),
+            'try_on_batch_id' => $batch->id,
+            'tenant_id' => $tenant->id,
+            'mirror_id' => $mirror->id,
+            'product_id' => $product->id,
+            'status' => TryOnJobStatus::Completed,
+            'provider' => 'mock',
+            'input_image_path' => 'try-on/batches/old/input.jpg',
+            'result_image_path' => 'try-on/results/old.jpg',
+        ]);
+
+        $this->artisan('tryon:purge-expired')->assertSuccessful();
+
+        $this->assertDatabaseCount('try_on_batches', 0);
+        $this->assertDatabaseCount('try_on_jobs', 0);
+        Storage::disk('local')->assertMissing('try-on/batches/old/input.jpg');
+        Storage::disk('local')->assertMissing('try-on/results/old.jpg');
     }
 
     private function mirrorFixture(): array

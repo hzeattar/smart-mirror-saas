@@ -63,8 +63,6 @@ class DatabaseSeeder extends Seeder
         }
 
         $this->call([
-            DemoGarmentCatalogSeeder::class,
-            DemoGarmentFitMetadataSeeder::class,
             PhotographicGarmentCatalogSeeder::class,
         ]);
 

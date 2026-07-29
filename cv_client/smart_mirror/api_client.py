@@ -108,6 +108,50 @@ class SmartMirrorApi:
         response.raise_for_status()
         return response.json()["job"]
 
+    def create_try_on_batch(
+        self,
+        products: list[CatalogProduct],
+        snapshot_path: Path,
+        sizing_chart_id: int | None = None,
+    ) -> dict:
+        data: list[tuple[str, str]] = [("product_ids[]", str(product.id)) for product in products]
+        if sizing_chart_id:
+            data.append(("sizing_chart_id", str(sizing_chart_id)))
+        with snapshot_path.open("rb") as handle:
+            response = self.session.post(
+                f"{self.base_url}/api/mirror/try-on-batches",
+                data=data,
+                files={"snapshot": (snapshot_path.name, handle, "image/jpeg")},
+                timeout=35,
+            )
+        response.raise_for_status()
+        return response.json()["batch"]
+
+    def try_on_batch(self, batch_id: str) -> dict:
+        response = self.session.get(f"{self.base_url}/api/mirror/try-on-batches/{batch_id}", timeout=12)
+        response.raise_for_status()
+        return response.json()["batch"]
+
+    def download_result_preview(self, url: str) -> np.ndarray | None:
+        if not url:
+            return None
+        digest = hashlib.sha256(url.encode("utf-8")).hexdigest()[:20]
+        cache_path = self.cache_dir / f"result-{digest}.jpg"
+        if cache_path.exists():
+            cached = cv2.imread(str(cache_path), cv2.IMREAD_COLOR)
+            if cached is not None:
+                return cached
+
+        response = self.session.get(url, timeout=20)
+        response.raise_for_status()
+        image = self._decode_image(response.content)
+        if image is None:
+            return None
+        if image.ndim == 3 and image.shape[2] == 4:
+            image = cv2.cvtColor(image, cv2.COLOR_BGRA2BGR)
+        cv2.imwrite(str(cache_path), image, [cv2.IMWRITE_JPEG_QUALITY, 88])
+        return image
+
     def _cache_path(self, product: CatalogProduct, url: str) -> Path:
         identity = f"{product.id}:{product.sku or ''}:{url}".encode("utf-8")
         digest = hashlib.sha256(identity).hexdigest()[:20]

@@ -36,6 +36,9 @@ class GestureEngine:
         "next": 0.85,
         "previous": 0.85,
         "snapshot": 2.20,
+        "start_capture": 2.00,
+        "confirm": 1.20,
+        "back": 0.90,
         "auto_size": 1.10,
         "size_up": 0.90,
         "show_controls": 0.80,
@@ -49,12 +52,14 @@ class GestureEngine:
         swipe_distance: float = 0.20,
         swipe_window_seconds: float = 0.85,
         swipe_velocity: float = 0.34,
+        mode: str = "live",
     ) -> None:
         self.cooldown_seconds = max(0.30, cooldown_seconds)
         self.hold_seconds = max(0.35, hold_seconds)
         self.swipe_distance = max(0.10, min(0.50, swipe_distance))
         self.swipe_window_seconds = max(0.35, swipe_window_seconds)
         self.swipe_velocity = max(0.18, swipe_velocity)
+        self.mode = mode
         self._history: deque[tuple[float, float, float]] = deque(maxlen=40)
         self._hold_gesture = ""
         self._hold_started = 0.0
@@ -137,7 +142,7 @@ class GestureEngine:
         if swipe is not None:
             return swipe
 
-        mapping = self.HOLD_ACTIONS.get(hand.gesture)
+        mapping = self._hold_actions().get(hand.gesture)
         if mapping is None:
             self._reset_hold()
             return GestureStatus(
@@ -157,3 +162,12 @@ class GestureEngine:
             return self._trigger(action, label, hand.gesture_confidence, now)
 
         return GestureStatus(active_label=label, progress=progress, last_action=self._last_action)
+
+    def _hold_actions(self) -> dict[str, tuple[str, str]]:
+        if self.mode == "hybrid":
+            return {
+                "open_palm": ("start_capture", "READY"),
+                "thumbs_up": ("confirm", "SAVED"),
+                "fist": ("back", "BACK"),
+            }
+        return self.HOLD_ACTIONS

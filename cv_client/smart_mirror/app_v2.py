@@ -11,6 +11,7 @@ from .camera import open_camera
 from .fitting import estimate_body_measurements, fit_confidence, recommend_size
 from .gestures import GestureEngine, GestureStatus
 from .hand_tracker import HandTracker
+from .hybrid import BurstFrame, HybridState, best_burst_frame, draw_attractor, draw_hybrid_hud, frame_score, save_hybrid_snapshot
 from .interaction import CursorState, HandCursor
 from .lower_overlay import lower_body_ready, overlay_trousers
 from .overlay import overlay_garment
@@ -27,7 +28,9 @@ class SmartMirrorAppV2(SmartMirrorApp):
     def __init__(self, args):
         super().__init__(args)
         self.cursor_state = CursorState()
-        self.ai_tryon = AiTryOnState(enabled=bool(getattr(args, "ai_tryon", False)))
+        self.experience = str(getattr(args, "experience", "live") or "live").lower()
+        self.ai_tryon = AiTryOnState(enabled=bool(getattr(args, "ai_tryon", False)) or self.experience == "hybrid")
+        self.hybrid = HybridState() if self.experience == "hybrid" else None
         self.session_log = SessionLogger(args.data_dir, bool(getattr(args, "session_log", True)))
         self._frame_count = 0
         self._fps_started_at = time.monotonic()
@@ -136,6 +139,150 @@ class SmartMirrorAppV2(SmartMirrorApp):
         except Exception as exc:
             self.session_log.event("ai_tryon_poll_error", job_id=self.ai_tryon.job_id, error=str(exc))
 
+    def _hybrid_outfit_products(self, count: int = 3) -> list:
+        if not self.products:
+            return []
+        return [self.products[(self.product_index + offset) % len(self.products)] for offset in range(min(count, len(self.products)))]
+
+    def _start_hybrid_capture(self, pose, now: float) -> None:
+        if not self.hybrid:
+            return
+        if self.hybrid.active:
+            return
+        if not self.api:
+            self.hybrid.message = "PAIR MIRROR FIRST"
+            self.snapshot_message = "PAIR MIRROR BEFORE AI TRY-ON"
+            self.snapshot_message_until = now + 2.5
+            return
+        if pose is None:
+            self.hybrid.mode = "align_user"
+            self.hybrid.message = "STAND CENTER"
+            self.snapshot_message = "STAND CENTER AND RAISE HAND"
+            self.snapshot_message_until = now + 2.0
+            return
+        self.hybrid.mode = "capture_burst"
+        self.hybrid.message = "HOLD STILL"
+        self.hybrid.burst.clear()
+        self.hybrid.capture_started_at = now
+        self.hybrid.qr_visible = False
+        self.session_log.event("hybrid_capture_started", product_id=self.product.id, product_name=self.product.name)
+
+    def _submit_hybrid_batch(self, selected_size: dict | None, now: float) -> None:
+        if not self.hybrid:
+            return
+        best = best_burst_frame(self.hybrid.burst)
+        if best is None:
+            self.hybrid.mode = "idle_attractor"
+            self.hybrid.message = "CAPTURE FAILED"
+            return
+        try:
+            snapshot_path = save_hybrid_snapshot(best, Path(self.args.data_dir) / "hybrid-inputs")
+            products = self._hybrid_outfit_products(3)
+            batch = self.api.create_try_on_batch(products, snapshot_path, self._selected_size_id(selected_size))
+            self.hybrid.mode = "generating"
+            self.hybrid.status = str(batch.get("status") or "queued")
+            self.hybrid.batch_id = str(batch.get("id") or "")
+            self.hybrid.jobs = list(batch.get("jobs") or [])
+            self.hybrid.current_index = 0
+            self.hybrid.last_poll_at = 0.0
+            self.hybrid.message = "AI PROCESSING"
+            self.session_log.event(
+                "hybrid_batch_created",
+                batch_id=self.hybrid.batch_id,
+                product_ids=[product.id for product in products],
+                status=self.hybrid.status,
+            )
+        except Exception as exc:
+            self.hybrid.mode = "idle_attractor"
+            self.hybrid.status = "failed"
+            self.hybrid.message = "AI FAILED"
+            self.snapshot_message = "AI BATCH FAILED"
+            self.snapshot_message_until = now + 3.0
+            self.session_log.event("hybrid_batch_error", error=str(exc), product_id=self.product.id)
+
+    def _poll_hybrid_batch(self, now: float) -> None:
+        if not self.hybrid or not self.hybrid.batch_id or not self.api:
+            return
+        if self.hybrid.mode not in {"generating", "gallery"}:
+            return
+        if now - self.hybrid.last_poll_at < 2.5:
+            return
+        self.hybrid.last_poll_at = now
+        try:
+            batch = self.api.try_on_batch(self.hybrid.batch_id)
+            old_status = self.hybrid.status
+            self.hybrid.status = str(batch.get("status") or self.hybrid.status)
+            self.hybrid.jobs = list(batch.get("jobs") or [])
+            ready = self.hybrid.ready_jobs
+            self.hybrid.message = f"AI READY {len(ready)}/{max(1, len(self.hybrid.jobs))}" if ready else "AI PROCESSING"
+            if ready:
+                self.hybrid.mode = "gallery"
+                self._preload_hybrid_preview()
+            if self.hybrid.status == "failed" and not ready:
+                self.hybrid.mode = "idle_attractor"
+                self.hybrid.message = "AI FAILED"
+            if self.hybrid.status != old_status:
+                self.session_log.event(
+                    "hybrid_batch_status",
+                    batch_id=self.hybrid.batch_id,
+                    status=self.hybrid.status,
+                    ready=len(ready),
+                )
+        except Exception as exc:
+            self.session_log.event("hybrid_batch_poll_error", batch_id=self.hybrid.batch_id, error=str(exc))
+
+    def _preload_hybrid_preview(self) -> None:
+        if not self.hybrid or not self.api:
+            return
+        ready = self.hybrid.ready_jobs
+        if not ready:
+            return
+        current = ready[self.hybrid.current_index % len(ready)]
+        url = str(current.get("result_url") or "")
+        if not url or url in self.hybrid.preview_cache:
+            return
+        try:
+            preview = self.api.download_result_preview(url)
+            if preview is not None:
+                self.hybrid.preview_cache[url] = preview
+        except Exception as exc:
+            self.session_log.event("hybrid_preview_error", url=url, error=str(exc))
+
+    def _handle_hybrid_action(self, action: str | None, pose, now: float) -> bool:
+        if not self.hybrid or not action:
+            return False
+        if action == "start_capture":
+            self._start_hybrid_capture(pose, now)
+            return True
+        if action == "next" and self.hybrid.mode == "gallery":
+            ready = self.hybrid.ready_jobs
+            if ready:
+                self.hybrid.current_index = (self.hybrid.current_index + 1) % len(ready)
+                self.hybrid.qr_visible = False
+                self.hybrid.qr_image = None
+                self._preload_hybrid_preview()
+                self.session_log.event("hybrid_gallery_next", index=self.hybrid.current_index)
+            return True
+        if action == "previous" and self.hybrid.mode == "gallery":
+            ready = self.hybrid.ready_jobs
+            if ready:
+                self.hybrid.current_index = (self.hybrid.current_index - 1) % len(ready)
+                self.hybrid.qr_visible = False
+                self.hybrid.qr_image = None
+                self._preload_hybrid_preview()
+                self.session_log.event("hybrid_gallery_previous", index=self.hybrid.current_index)
+            return True
+        if action == "confirm" and self.hybrid.mode == "gallery":
+            self.hybrid.qr_visible = True
+            self.session_log.event("hybrid_gallery_qr", index=self.hybrid.current_index)
+            return True
+        if action == "back":
+            self.hybrid.mode = "idle_attractor"
+            self.hybrid.message = "READY"
+            self.hybrid.qr_visible = False
+            return True
+        return False
+
     def _log_fps(self, now: float) -> None:
         self._frame_count += 1
         elapsed = now - self._fps_started_at
@@ -201,6 +348,7 @@ class SmartMirrorAppV2(SmartMirrorApp):
                 cooldown_seconds=self.args.gesture_cooldown,
                 hold_seconds=self.args.gesture_hold,
                 swipe_distance=self.args.swipe_distance,
+                mode=self.experience,
             )
             if hand_tracker
             else None
@@ -218,11 +366,13 @@ class SmartMirrorAppV2(SmartMirrorApp):
                     continue
                 if self.args.mirror_view:
                     frame = cv2.flip(frame, 1)
+                raw_frame = frame.copy()
 
                 now = time.monotonic()
                 self._log_fps(now)
                 timestamp_ms = int(now * 1000)
                 self._poll_ai_tryon(now)
+                self._poll_hybrid_batch(now)
                 hands = hand_tracker.detect(frame, timestamp_ms) if hand_tracker else []
                 self.gesture_status = gesture_engine.update(hands, now) if gesture_engine else GestureStatus()
                 self.cursor_state = (
@@ -236,10 +386,13 @@ class SmartMirrorAppV2(SmartMirrorApp):
 
                 pending_snapshot = False
                 if self.gesture_status.event:
-                    if self.gesture_status.event.action == "snapshot":
+                    action = self.gesture_status.event.action
+                    if self.hybrid and action in {"start_capture", "next", "previous", "confirm", "back"}:
+                        pass
+                    elif action == "snapshot":
                         pending_snapshot = True
                     else:
-                        self.handle_action(self.gesture_status.event.action)
+                        self.handle_action(action)
 
                 detected_pose = pose_tracker.detect(frame, timestamp_ms)
                 if detected_pose:
@@ -263,6 +416,16 @@ class SmartMirrorAppV2(SmartMirrorApp):
                     lower_body_required = self._garment_type() in self.LOWER_GARMENT_TYPES and not garment_rendered
 
                 selected_size, selected_label = self.selected_size()
+                if self.gesture_status.event and self.hybrid:
+                    self._handle_hybrid_action(self.gesture_status.event.action, pose, now)
+
+                if self.hybrid and self.hybrid.mode == "capture_burst":
+                    elapsed = now - self.hybrid.capture_started_at
+                    if len(self.hybrid.burst) < 5 and (not self.hybrid.burst or elapsed / max(1, len(self.hybrid.burst)) >= 0.32):
+                        self.hybrid.burst.append(BurstFrame(raw_frame.copy(), frame_score(raw_frame, pose, hands)))
+                    if len(self.hybrid.burst) >= 5 or elapsed >= 2.0:
+                        self._submit_hybrid_batch(selected_size, now)
+
                 confidence = fit_confidence(
                     pose.visibility if pose else 0.0,
                     self.recommendation,
@@ -291,6 +454,9 @@ class SmartMirrorAppV2(SmartMirrorApp):
                 if lower_body_required:
                     gesture_label = "STEP BACK: SHOW HIPS AND FEET"
                     gesture_progress = 0.0
+
+                if self.hybrid and self.hybrid.mode in {"idle_attractor", "align_user", "generating"}:
+                    draw_attractor(frame, now, 1.0 if pose else 0.0)
 
                 self.hitboxes = draw_smart_ui(
                     frame,
@@ -322,6 +488,9 @@ class SmartMirrorAppV2(SmartMirrorApp):
                     ),
                 )
 
+                if self.hybrid:
+                    draw_hybrid_hud(frame, self.hybrid, gesture_label, gesture_progress)
+
                 cv2.imshow(self.WINDOW_NAME, frame)
                 key = cv2.waitKeyEx(1)
                 if key in (ord("q"), ord("Q"), 27):
@@ -352,7 +521,10 @@ class SmartMirrorAppV2(SmartMirrorApp):
                         self.snapshot_message = "SHOW REQUIRED BODY AREA FIRST"
                         self.snapshot_message_until = now + 2.5
                 elif key in (ord("i"), ord("I")):
-                    self._start_ai_tryon(frame.copy(), selected_size, garment_rendered, now)
+                    if self.hybrid:
+                        self._start_hybrid_capture(pose, now)
+                    else:
+                        self._start_ai_tryon(frame.copy(), selected_size, garment_rendered, now)
 
                 if self.api and now - last_heartbeat > 30:
                     try:

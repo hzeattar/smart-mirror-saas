@@ -15,16 +15,19 @@ class DemoSeederTest extends TestCase
         $this->seed();
 
         $products = Product::query()
-            ->where('sku', 'like', 'PHOTO-%')
+            ->where('sku', 'like', 'REAL-%')
             ->with('sizingCharts')
             ->get();
 
-        $this->assertCount(5, $products);
+        $this->assertCount(10, $products);
+        $this->assertSame(0, Product::query()->where('sku', 'like', 'PHOTO-%')->where('status', 'active')->count());
+        $this->assertSame(0, Product::query()->whereIn('sku', ['TSHIRT-001', 'HOODIE-001', 'POLO-001'])->where('status', 'active')->count());
+        $this->assertCount(10, $products->pluck('texture_image_url')->unique());
 
         foreach ($products as $product) {
             $this->assertCount(4, $product->sizingCharts);
-            $this->assertStringStartsWith('/demo-garments/', $product->base_image_url);
-            $this->assertStringStartsWith('/demo-garments/', $product->texture_image_url);
+            $this->assertStringStartsWith('/demo-garments/real/', $product->base_image_url);
+            $this->assertStringStartsWith('/demo-garments/real/', $product->texture_image_url);
 
             foreach ($product->sizingCharts as $size) {
                 $this->assertNotNull($size->shoulder_width_cm);
@@ -32,5 +35,8 @@ class DemoSeederTest extends TestCase
                 $this->assertNotNull($size->height_cm);
             }
         }
+
+        $metadata = json_decode(file_get_contents(base_path('docs/REAL_GARMENT_SOURCES.json')), true);
+        $this->assertGreaterThanOrEqual(10, count($metadata['assets'] ?? []));
     }
 }

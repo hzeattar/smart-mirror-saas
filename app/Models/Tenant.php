@@ -53,4 +53,9 @@ class Tenant extends Model
     {
         return $this->hasMany(TryOnJob::class);
     }
+
+    public function tryOnBatches(): HasMany
+    {
+        return $this->hasMany(TryOnBatch::class);
+    }
 }

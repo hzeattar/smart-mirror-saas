@@ -2,30 +2,29 @@
 
 namespace App\Models;
 
-use App\Enums\TryOnJobStatus;
+use App\Enums\TryOnBatchStatus;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
-class TryOnJob extends Model
+class TryOnBatch extends Model
 {
     use HasFactory;
 
     protected $fillable = [
         'public_id',
-        'try_on_batch_id',
         'tenant_id',
         'mirror_id',
-        'product_id',
         'sizing_chart_id',
         'status',
         'provider',
         'input_image_path',
-        'garment_image_path',
-        'result_image_path',
+        'outfit_count',
+        'completed_count',
+        'failed_count',
         'error',
-        'attempts',
         'queued_at',
         'started_at',
         'completed_at',
@@ -36,8 +35,10 @@ class TryOnJob extends Model
     protected function casts(): array
     {
         return [
-            'status' => TryOnJobStatus::class,
-            'attempts' => 'integer',
+            'status' => TryOnBatchStatus::class,
+            'outfit_count' => 'integer',
+            'completed_count' => 'integer',
+            'failed_count' => 'integer',
             'queued_at' => 'datetime',
             'started_at' => 'datetime',
             'completed_at' => 'datetime',
@@ -56,24 +57,19 @@ class TryOnJob extends Model
         return $this->belongsTo(Tenant::class);
     }
 
-    public function batch(): BelongsTo
-    {
-        return $this->belongsTo(TryOnBatch::class, 'try_on_batch_id');
-    }
-
     public function mirror(): BelongsTo
     {
         return $this->belongsTo(Mirror::class);
     }
 
-    public function product(): BelongsTo
-    {
-        return $this->belongsTo(Product::class);
-    }
-
     public function sizingChart(): BelongsTo
     {
         return $this->belongsTo(SizingChart::class);
+    }
+
+    public function jobs(): HasMany
+    {
+        return $this->hasMany(TryOnJob::class);
     }
 
     public function scopeForTenant(Builder $query, int $tenantId): Builder

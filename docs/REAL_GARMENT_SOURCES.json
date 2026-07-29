@@ -1,0 +1,17 @@
+{
+  "asset_policy": "Local demo assets only. Replace these with store-owned product photography before commercial use.",
+  "hotlinking": false,
+  "retention_note": "Customer try-on input and generated result media are purged by the tryon:purge-expired command according to AI_TRYON_RETENTION_HOURS.",
+  "assets": [
+    {"sku": "REAL-SHIRT-001", "file": "/demo-garments/real/real-white-oxford-shirt.webp", "source": "local-generated-demo", "license": "project-demo-use"},
+    {"sku": "REAL-TSHIRT-001", "file": "/demo-garments/real/real-black-vneck-tshirt.webp", "source": "local-generated-demo", "license": "project-demo-use"},
+    {"sku": "REAL-SHIRT-002", "file": "/demo-garments/real/real-sage-linen-shirt.webp", "source": "local-generated-demo", "license": "project-demo-use"},
+    {"sku": "REAL-JACKET-001", "file": "/demo-garments/real/real-denim-jacket.webp", "source": "local-generated-demo", "license": "project-demo-use"},
+    {"sku": "REAL-HOODIE-001", "file": "/demo-garments/real/real-charcoal-hoodie.webp", "source": "local-generated-demo", "license": "project-demo-use"},
+    {"sku": "REAL-TROUSER-001", "file": "/demo-garments/real/real-khaki-chinos.webp", "source": "local-generated-demo", "license": "project-demo-use"},
+    {"sku": "REAL-TROUSER-002", "file": "/demo-garments/real/real-black-tailored-trousers.webp", "source": "local-generated-demo", "license": "project-demo-use"},
+    {"sku": "REAL-SUIT-001", "file": "/demo-garments/real/real-navy-suit-jacket.webp", "source": "local-generated-demo", "license": "project-demo-use"},
+    {"sku": "REAL-SUIT-002", "file": "/demo-garments/real/real-grey-two-piece-suit.webp", "source": "local-generated-demo", "license": "project-demo-use"},
+    {"sku": "REAL-DRESS-001", "file": "/demo-garments/real/real-burgundy-midi-dress.webp", "source": "local-generated-demo", "license": "project-demo-use"}
+  ]
+}

@@ -65,6 +65,18 @@ class GestureEngineTests(unittest.TestCase):
         status = engine.update([observation("pinch", 0.5)], 0.55)
         self.assertEqual("auto_size", status.event.action)
 
+    def test_hybrid_open_palm_hold_starts_capture(self):
+        engine = GestureEngine(cooldown_seconds=0.4, hold_seconds=0.5, mode="hybrid")
+        engine.update([observation("open_palm", 0.5)], 0.0)
+        status = engine.update([observation("open_palm", 0.5)], 0.55)
+        self.assertEqual("start_capture", status.event.action)
+
+    def test_hybrid_ignores_pinch_as_primary_command(self):
+        engine = GestureEngine(cooldown_seconds=0.4, hold_seconds=0.5, mode="hybrid")
+        engine.update([observation("pinch", 0.5)], 0.0)
+        status = engine.update([observation("pinch", 0.5)], 0.55)
+        self.assertIsNone(status.event)
+
     def test_no_hand_resets_pending_hold(self):
         engine = GestureEngine(cooldown_seconds=0.4, hold_seconds=0.5)
         engine.update([observation("thumbs_up", 0.5)], 0.0)

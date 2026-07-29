@@ -17,7 +17,10 @@ class MirrorController extends Controller
         return response()->json([
             'mirrors' => Mirror::query()
                 ->forTenant($request->user()->tenant_id)
-                ->with(['tryOnJobs' => fn ($query) => $query->latest()->limit(1)])
+                ->with([
+                    'tryOnJobs' => fn ($query) => $query->latest()->limit(1),
+                    'tryOnBatches' => fn ($query) => $query->latest()->limit(1),
+                ])
                 ->latest()
                 ->get()
                 ->map(fn (Mirror $mirror) => [
@@ -26,6 +29,18 @@ class MirrorController extends Controller
                         'public_id',
                         'status',
                         'provider',
+                        'created_at',
+                        'completed_at',
+                        'failed_at',
+                        'error',
+                    ]),
+                    'latest_try_on_batch' => $mirror->tryOnBatches->first()?->only([
+                        'public_id',
+                        'status',
+                        'provider',
+                        'outfit_count',
+                        'completed_count',
+                        'failed_count',
                         'created_at',
                         'completed_at',
                         'failed_at',
