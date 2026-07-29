@@ -22,7 +22,7 @@ class GestureStatus:
 
 
 class GestureEngine:
-    """Temporal gesture state machine for deliberate kiosk controls."""
+    """Temporal gesture state machine for deliberate retail-kiosk controls."""
 
     HOLD_ACTIONS = {
         "thumbs_up": ("snapshot", "SAVE PHOTO"),
@@ -32,28 +32,43 @@ class GestureEngine:
         "two_fingers": ("size_up", "NEXT SIZE"),
     }
 
+    ACTION_COOLDOWNS = {
+        "next": 0.85,
+        "previous": 0.85,
+        "snapshot": 2.20,
+        "auto_size": 1.10,
+        "size_up": 0.90,
+        "show_controls": 0.80,
+        "hide_controls": 0.80,
+    }
+
     def __init__(
         self,
         cooldown_seconds: float = 1.10,
         hold_seconds: float = 0.75,
         swipe_distance: float = 0.20,
         swipe_window_seconds: float = 0.85,
+        swipe_velocity: float = 0.34,
     ) -> None:
         self.cooldown_seconds = max(0.30, cooldown_seconds)
         self.hold_seconds = max(0.35, hold_seconds)
         self.swipe_distance = max(0.10, min(0.50, swipe_distance))
         self.swipe_window_seconds = max(0.35, swipe_window_seconds)
+        self.swipe_velocity = max(0.18, swipe_velocity)
         self._history: deque[tuple[float, float, float]] = deque(maxlen=40)
         self._hold_gesture = ""
         self._hold_started = 0.0
-        self._last_triggered_at = -999.0
+        self._last_triggered: dict[str, float] = {}
         self._last_action = ""
 
-    def _ready(self, now: float) -> bool:
-        return now - self._last_triggered_at >= self.cooldown_seconds
+    def _cooldown_for(self, action: str) -> float:
+        return max(self.cooldown_seconds, self.ACTION_COOLDOWNS.get(action, 0.0))
+
+    def _ready(self, action: str, now: float) -> bool:
+        return now - self._last_triggered.get(action, -999.0) >= self._cooldown_for(action)
 
     def _trigger(self, action: str, label: str, confidence: float, now: float) -> GestureStatus:
-        self._last_triggered_at = now
+        self._last_triggered[action] = now
         self._last_action = label
         self._history.clear()
         self._hold_gesture = ""
@@ -77,20 +92,39 @@ class GestureEngine:
         self._history.append((now, hand.palm_center.x, hand.palm_center.y))
         while self._history and now - self._history[0][0] > self.swipe_window_seconds:
             self._history.popleft()
-        if len(self._history) < 4 or not self._ready(now):
+        if len(self._history) < 5:
             return None
 
         first_time, first_x, first_y = self._history[0]
-        duration = now - first_time
+        duration = max(1e-6, now - first_time)
         dx = hand.palm_center.x - first_x
-        dy = abs(hand.palm_center.y - first_y)
-        if duration < 0.12 or dy > 0.18 or abs(dx) < self.swipe_distance:
+        dy = hand.palm_center.y - first_y
+        velocity = abs(dx) / duration
+
+        if duration < 0.16 or abs(dy) > 0.16 or abs(dx) < self.swipe_distance:
+            return None
+        if velocity < self.swipe_velocity:
             return None
 
-        confidence = min(1.0, abs(dx) / max(self.swipe_distance * 1.75, 1e-6))
-        if dx < 0:
-            return self._trigger("next", "NEXT GARMENT", confidence, now)
-        return self._trigger("previous", "PREVIOUS GARMENT", confidence, now)
+        segments = list(self._history)
+        deltas = [segments[i][1] - segments[i - 1][1] for i in range(1, len(segments))]
+        direction = -1 if dx < 0 else 1
+        aligned = sum(1 for delta in deltas if delta * direction > 0.002)
+        if aligned / max(1, len(deltas)) < 0.65:
+            return None
+
+        action = "next" if dx < 0 else "previous"
+        if not self._ready(action, now):
+            return None
+
+        confidence = min(
+            1.0,
+            0.45
+            + abs(dx) / max(self.swipe_distance * 3.0, 1e-6)
+            + velocity / max(self.swipe_velocity * 8.0, 1e-6),
+        )
+        label = "NEXT GARMENT" if action == "next" else "PREVIOUS GARMENT"
+        return self._trigger(action, label, confidence, now)
 
     def update(self, observations: list[HandObservation], now: float) -> GestureStatus:
         hand = self._primary(observations)
@@ -119,7 +153,7 @@ class GestureEngine:
 
         elapsed = max(0.0, now - self._hold_started)
         progress = min(1.0, elapsed / self.hold_seconds)
-        if progress >= 1.0 and self._ready(now):
+        if progress >= 1.0 and self._ready(action, now):
             return self._trigger(action, label, hand.gesture_confidence, now)
 
         return GestureStatus(active_label=label, progress=progress, last_action=self._last_action)

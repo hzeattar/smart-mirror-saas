@@ -71,6 +71,7 @@ class CheckoutController extends Controller
         $items = collect($session->cart)->map(function (array $item) use ($products): array {
             $product = $products->get($item['product_id']);
             $size = $product?->sizingCharts->firstWhere('id', $item['sizing_chart_id'] ?? null);
+
             return [
                 ...$item,
                 'name' => $product?->name,
@@ -109,6 +110,7 @@ class CheckoutController extends Controller
                 'completed_at' => now(),
                 'order_id' => $order->id,
             ])->save();
+
             return $order;
         });
 
@@ -120,6 +122,7 @@ class CheckoutController extends Controller
         /** @var Mirror $mirror */
         $mirror = $request->attributes->get('mirror');
         $order = $orders->create($mirror->tenant_id, $mirror, $request->validated());
+
         return response()->json(['order' => $this->presentOrder($order)], 201);
     }
 

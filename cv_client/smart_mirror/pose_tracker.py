@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-import mediapipe as mp
 import numpy as np
 
 from .geometry import Point, distance, midpoint
@@ -25,6 +24,11 @@ class PoseFrame:
     visibility: float
     arm_visibility: float
     estimated_hips: bool = False
+    left_knee: Point | None = None
+    right_knee: Point | None = None
+    left_ankle: Point | None = None
+    right_ankle: Point | None = None
+    leg_visibility: float = 0.0
 
 
 def _landmark_confidence(landmark) -> float:
@@ -49,13 +53,7 @@ def estimate_hip_anchors(
     left_hip_confidence: float = 0.0,
     right_hip_confidence: float = 0.0,
 ) -> tuple[Point, Point, bool]:
-    """Return stable hip anchors for upper-body and partially cropped camera views.
-
-    A normal retail mirror often frames the customer from the head to the waist. MediaPipe
-    can still provide reliable shoulders while hip landmarks become weak or fall outside the
-    image. The renderer only needs a stable lower torso boundary for tops, so a shoulder-based
-    estimate is preferable to rejecting the complete pose.
-    """
+    """Return stable hip anchors for upper-body and partially cropped views."""
 
     shoulder_width = max(1.0, distance(left_shoulder, right_shoulder))
     shoulder_dx = right_shoulder.x - left_shoulder.x
@@ -63,7 +61,6 @@ def estimate_hip_anchors(
     axis_x = shoulder_dx / shoulder_width
     axis_y = shoulder_dy / shoulder_width
 
-    # Perpendicular to the shoulder line, always directed down the image.
     down_x = -axis_y
     down_y = axis_x
     if down_y < 0:
@@ -107,12 +104,24 @@ class PoseTracker:
     RIGHT_WRIST = 16
     LEFT_HIP = 23
     RIGHT_HIP = 24
+    LEFT_KNEE = 25
+    RIGHT_KNEE = 26
+    LEFT_ANKLE = 27
+    RIGHT_ANKLE = 28
 
     def __init__(self, model_path: Path, width: int, height: int):
+        try:
+            import mediapipe as mp
+        except ImportError as exc:
+            raise RuntimeError(
+                "MediaPipe is required for live pose tracking. Install cv_client/requirements.txt."
+            ) from exc
+
         if not model_path.exists():
             raise FileNotFoundError(f"MediaPipe model not found: {model_path}. Run download_model.py first.")
         self.width = width
         self.height = height
+        self._mp = mp
         base_options = mp.tasks.BaseOptions(model_asset_path=str(model_path))
         options = mp.tasks.vision.PoseLandmarkerOptions(
             base_options=base_options,
@@ -127,7 +136,7 @@ class PoseTracker:
     def detect(self, bgr_frame: np.ndarray, timestamp_ms: int) -> PoseFrame | None:
         rgb = np.ascontiguousarray(bgr_frame[:, :, ::-1])
         result = self.landmarker.detect_for_video(
-            mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb),
+            self._mp.Image(image_format=self._mp.ImageFormat.SRGB, data=rgb),
             timestamp_ms,
         )
         if not result.pose_landmarks:
@@ -177,6 +186,13 @@ class PoseTracker:
         ]
         arm_visibility = min(_landmark_confidence(item) for item in arm_landmarks)
 
+        leg_landmark_indexes = (self.LEFT_KNEE, self.RIGHT_KNEE, self.LEFT_ANKLE, self.RIGHT_ANKLE)
+        leg_visibility = min(_landmark_confidence(landmarks[index]) for index in leg_landmark_indexes)
+        left_knee = point(self.LEFT_KNEE) if leg_visibility >= 0.18 else None
+        right_knee = point(self.RIGHT_KNEE) if leg_visibility >= 0.18 else None
+        left_ankle = point(self.LEFT_ANKLE) if leg_visibility >= 0.18 else None
+        right_ankle = point(self.RIGHT_ANKLE) if leg_visibility >= 0.18 else None
+
         shoulder_mid = midpoint(left_shoulder, right_shoulder)
         hip_mid = midpoint(left_hip, right_hip)
         hip_visibility = min(left_hip_confidence, right_hip_confidence)
@@ -197,6 +213,11 @@ class PoseTracker:
             visibility=visibility,
             arm_visibility=arm_visibility,
             estimated_hips=estimated_hips,
+            left_knee=left_knee,
+            right_knee=right_knee,
+            left_ankle=left_ankle,
+            right_ankle=right_ankle,
+            leg_visibility=leg_visibility,
         )
 
     def close(self) -> None:

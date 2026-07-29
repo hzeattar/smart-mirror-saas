@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from smart_mirror.app import SmartMirrorApp
+from smart_mirror.app_v2 import SmartMirrorAppV2
 
 
 def parser() -> argparse.ArgumentParser:
@@ -32,4 +32,4 @@ def parser() -> argparse.ArgumentParser:
 
 
 if __name__ == "__main__":
-    SmartMirrorApp(parser().parse_args()).run()
+    SmartMirrorAppV2(parser().parse_args()).run()

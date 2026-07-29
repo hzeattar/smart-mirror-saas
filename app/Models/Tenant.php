@@ -13,12 +13,39 @@ class Tenant extends Model
     use HasFactory, SoftDeletes;
 
     protected $fillable = ['name', 'domain', 'status'];
-    protected function casts(): array { return ['status' => TenantStatus::class]; }
 
-    public function users(): HasMany { return $this->hasMany(User::class); }
-    public function mirrors(): HasMany { return $this->hasMany(Mirror::class); }
-    public function categories(): HasMany { return $this->hasMany(Category::class); }
-    public function products(): HasMany { return $this->hasMany(Product::class); }
-    public function orders(): HasMany { return $this->hasMany(Order::class); }
-    public function checkoutSessions(): HasMany { return $this->hasMany(CheckoutSession::class); }
+    protected function casts(): array
+    {
+        return ['status' => TenantStatus::class];
+    }
+
+    public function users(): HasMany
+    {
+        return $this->hasMany(User::class);
+    }
+
+    public function mirrors(): HasMany
+    {
+        return $this->hasMany(Mirror::class);
+    }
+
+    public function categories(): HasMany
+    {
+        return $this->hasMany(Category::class);
+    }
+
+    public function products(): HasMany
+    {
+        return $this->hasMany(Product::class);
+    }
+
+    public function orders(): HasMany
+    {
+        return $this->hasMany(Order::class);
+    }
+
+    public function checkoutSessions(): HasMany
+    {
+        return $this->hasMany(CheckoutSession::class);
+    }
 }
