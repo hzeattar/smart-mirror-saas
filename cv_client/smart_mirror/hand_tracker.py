@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from math import acos, degrees, hypot
 from pathlib import Path
 
@@ -25,23 +26,21 @@ class HandTracker:
 
     def __init__(
         self,
-        model_path: Path,
-        width: int,
-        height: int,
+        model_path: Path | None = None,
         max_hands: int = 2,
         min_detection_confidence: float = 0.60,
         min_tracking_confidence: float = 0.55,
     ) -> None:
-        if not model_path.exists():
+        resolved_model = model_path or Path(__file__).resolve().parents[1] / "models" / "hand_landmarker.task"
+        if not resolved_model.exists():
             raise FileNotFoundError(
-                f"MediaPipe hand model not found: {model_path}. Run download_model.py first."
+                f"MediaPipe hand model not found: {resolved_model}. Run download_model.py first."
             )
 
-        self.width = width
-        self.height = height
         self._last_observations: list[HandObservation] = []
+        self._last_timestamp_ms = -1
 
-        base_options = mp.tasks.BaseOptions(model_asset_path=str(model_path))
+        base_options = mp.tasks.BaseOptions(model_asset_path=str(resolved_model))
         options = mp.tasks.vision.HandLandmarkerOptions(
             base_options=base_options,
             running_mode=mp.tasks.vision.RunningMode.VIDEO,
@@ -107,18 +106,27 @@ class HandTracker:
             sum(point.z for point in selected) / len(selected),
         )
 
-    def detect(self, frame: np.ndarray, timestamp_ms: int) -> list[HandObservation]:
+    def detect(self, frame: np.ndarray, timestamp_ms: int | None = None) -> list[HandObservation]:
+        timestamp = int(time.monotonic() * 1000) if timestamp_ms is None else int(timestamp_ms)
+        if timestamp <= self._last_timestamp_ms:
+            timestamp = self._last_timestamp_ms + 1
+        self._last_timestamp_ms = timestamp
+
         rgb = np.ascontiguousarray(frame[:, :, ::-1])
         result = self._landmarker.detect_for_video(
             mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb),
-            timestamp_ms,
+            timestamp,
         )
 
         observations: list[HandObservation] = []
         for index, landmarks in enumerate(result.hand_landmarks or []):
             points = tuple(HandPoint(float(lm.x), float(lm.y), float(lm.z or 0.0)) for lm in landmarks)
             handedness = result.handedness[index][0] if index < len(result.handedness) and result.handedness[index] else None
-            label = str(getattr(handedness, "category_name", None) or getattr(handedness, "display_name", None) or "Unknown")
+            label = str(
+                getattr(handedness, "category_name", None)
+                or getattr(handedness, "display_name", None)
+                or "Unknown"
+            )
             score = float(getattr(handedness, "score", 0.0) or 0.0)
             gesture, gesture_confidence = self._classify(points)
             observations.append(
