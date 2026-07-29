@@ -53,6 +53,7 @@ class TryOnJobTest extends TestCase
             ->assertOk()
             ->assertJsonPath('job.status', 'completed')
             ->assertJsonPath('job.provider', 'mock');
+        $this->get('/try-on-results/'.$jobId)->assertOk()->assertHeader('content-type', 'image/jpeg');
     }
 
     public function test_mirror_cannot_read_another_mirror_try_on_job(): void

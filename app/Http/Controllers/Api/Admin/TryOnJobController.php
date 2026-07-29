@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Models\TryOnJob;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
 
 class TryOnJobController extends Controller
 {
@@ -23,7 +22,7 @@ class TryOnJobController extends Controller
                 'provider' => $job->provider,
                 'mirror' => $job->mirror,
                 'product' => $job->product,
-                'result_url' => $job->result_image_path ? Storage::disk(config('filesystems.default'))->url($job->result_image_path) : null,
+                'result_url' => $job->result_image_path ? url('/try-on-results/'.$job->public_id) : null,
                 'error' => $job->error,
                 'attempts' => $job->attempts,
                 'created_at' => $job->created_at?->toIso8601String(),

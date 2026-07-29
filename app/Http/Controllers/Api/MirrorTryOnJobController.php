@@ -11,7 +11,6 @@ use App\Models\SizingChart;
 use App\Models\TryOnJob;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class MirrorTryOnJobController extends Controller
@@ -82,7 +81,7 @@ class MirrorTryOnJobController extends Controller
             'status' => $job->status->value,
             'provider' => $job->provider,
             'poll_url' => url('/api/mirror/try-on-jobs/'.$job->public_id),
-            'result_url' => $job->result_image_path ? Storage::disk(config('filesystems.default'))->url($job->result_image_path) : null,
+            'result_url' => $job->result_image_path ? url('/try-on-results/'.$job->public_id) : null,
             'error' => $job->error,
             'created_at' => $job->created_at?->toIso8601String(),
             'completed_at' => $job->completed_at?->toIso8601String(),
