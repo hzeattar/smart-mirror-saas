@@ -19,6 +19,32 @@ This foundation is not the final virtual try-on experience. The old 2D garment w
 
 ### Phase 1 — Real garment ingestion and Smart Gesture UI — IN PROGRESS
 
+#### Implemented in the current branch
+- Created protected implementation branch: `phase-2-real-garments-smart-ui`.
+- Added `HandCursor` with index-finger pointing, smoothing, hit testing, dwell progress and action cooldown.
+- Added a dedicated `point` hand gesture to the MediaPipe hand classifier.
+- Added automated tests for dwell selection, moving between targets and duplicate-trigger prevention.
+- Added a real-garment preprocessing pipeline with:
+  - optional rembg background removal;
+  - conservative border-colour fallback;
+  - transparent-bound detection;
+  - canvas normalization;
+  - quality validation;
+  - SHA-256 and JSON metadata output.
+- Added `prepare_garment.py` command-line importer.
+- Added automated tests for alpha bounds, centring and metadata generation.
+
+#### Remaining work inside this phase
+- Connect `HandCursor` to the live application loop.
+- Replace the current large side arrows and bottom control block with a compact product carousel and confirmation ring.
+- Add swipe velocity/inertia filtering and per-action cooldown profiles.
+- Add photographic assets for T-shirt, shirt, hoodie/jacket, trousers and suit with attribution/license metadata where required.
+- Link all five products to categories, prices, colour variants and multi-size charts.
+- Add backend/admin garment-quality status and prepared-asset metadata.
+- Run the full Python test suite.
+- Perform local Windows camera acceptance.
+- Merge only after review, then verify the resulting Railway deployment.
+
 #### Goals
 1. Replace all cartoon/demo garment art with front-facing photographic garment assets.
 2. Support real garment categories: T-shirt, shirt, hoodie/jacket, trousers and suit.
