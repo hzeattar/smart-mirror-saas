@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-import mediapipe as mp
 import numpy as np
 
 from .geometry import Point, distance, midpoint
@@ -111,10 +110,18 @@ class PoseTracker:
     RIGHT_ANKLE = 28
 
     def __init__(self, model_path: Path, width: int, height: int):
+        try:
+            import mediapipe as mp
+        except ImportError as exc:
+            raise RuntimeError(
+                "MediaPipe is required for live pose tracking. Install cv_client/requirements.txt."
+            ) from exc
+
         if not model_path.exists():
             raise FileNotFoundError(f"MediaPipe model not found: {model_path}. Run download_model.py first.")
         self.width = width
         self.height = height
+        self._mp = mp
         base_options = mp.tasks.BaseOptions(model_asset_path=str(model_path))
         options = mp.tasks.vision.PoseLandmarkerOptions(
             base_options=base_options,
@@ -129,7 +136,7 @@ class PoseTracker:
     def detect(self, bgr_frame: np.ndarray, timestamp_ms: int) -> PoseFrame | None:
         rgb = np.ascontiguousarray(bgr_frame[:, :, ::-1])
         result = self.landmarker.detect_for_video(
-            mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb),
+            self._mp.Image(image_format=self._mp.ImageFormat.SRGB, data=rgb),
             timestamp_ms,
         )
         if not result.pose_landmarks:
