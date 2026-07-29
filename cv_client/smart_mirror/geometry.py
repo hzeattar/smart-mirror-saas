@@ -56,6 +56,10 @@ class PoseGeometrySmoother:
         "right_elbow",
         "left_wrist",
         "right_wrist",
+        "left_knee",
+        "right_knee",
+        "left_ankle",
+        "right_ankle",
     )
 
     def __init__(self, alpha: float = 0.32):
@@ -65,7 +69,11 @@ class PoseGeometrySmoother:
         self.torso = ExponentialSmoother(alpha)
 
     def update(self, pose):
-        values = {name: self.points[name].update(getattr(pose, name)) for name in self.POINT_FIELDS}
+        values = {}
+        for name in self.POINT_FIELDS:
+            point = getattr(pose, name, None)
+            values[name] = self.points[name].update(point) if point is not None else None
+
         values.update(
             shoulder_pixels=self.shoulder.update(pose.shoulder_pixels),
             hip_pixels=self.hip.update(pose.hip_pixels),
@@ -73,6 +81,7 @@ class PoseGeometrySmoother:
             visibility=pose.visibility,
             arm_visibility=pose.arm_visibility,
             estimated_hips=getattr(pose, "estimated_hips", False),
+            leg_visibility=getattr(pose, "leg_visibility", 0.0),
         )
         return type(pose)(**values)
 
