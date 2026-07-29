@@ -24,16 +24,16 @@ jobs:
 
   python:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
           cache: pip
-          cache-dependency-path: cv_client/requirements.txt
-      - name: Install CV client dependencies
-        run: python -m pip install -r cv_client/requirements.txt
+          cache-dependency-path: cv_client/requirements-ci.txt
+      - name: Install lightweight CV test dependencies
+        run: python -m pip install -r cv_client/requirements-ci.txt
       - name: Compile CV client
         run: python -m compileall -q cv_client
       - name: Run CV client tests
