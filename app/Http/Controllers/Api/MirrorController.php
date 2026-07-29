@@ -15,7 +15,12 @@ class MirrorController extends Controller
     {
         /** @var Mirror $mirror */
         $mirror = $request->attributes->get('mirror');
-        return response()->json(['ok' => true, 'server_time' => now()->toIso8601String(), 'mirror_id' => $mirror->id]);
+
+        return response()->json([
+            'ok' => true,
+            'server_time' => now()->toIso8601String(),
+            'mirror_id' => $mirror->id,
+        ]);
     }
 
     public function catalog(Request $request, ?Mirror $mirror = null): JsonResponse
@@ -37,8 +42,8 @@ class MirrorController extends Controller
                 'description' => $product->description,
                 'price' => (float) $product->unit_price,
                 'currency' => $product->currency,
-                'base_image_url' => $product->base_image_url,
-                'texture_image_url' => $product->texture_image_url,
+                'base_image_url' => $this->absoluteAssetUrl($request, $product->base_image_url),
+                'texture_image_url' => $this->absoluteAssetUrl($request, $product->texture_image_url),
                 'category' => $product->category,
                 'sizes' => $product->sizingCharts->map(fn ($size) => [
                     'id' => $size->id,
@@ -55,5 +60,18 @@ class MirrorController extends Controller
             'products' => $products,
             'generated_at' => now()->toIso8601String(),
         ]);
+    }
+
+    private function absoluteAssetUrl(Request $request, ?string $value): ?string
+    {
+        if (! $value) {
+            return null;
+        }
+
+        if (preg_match('#^https?://#i', $value) === 1) {
+            return $value;
+        }
+
+        return rtrim($request->root(), '/').'/'.ltrim($value, '/');
     }
 }
