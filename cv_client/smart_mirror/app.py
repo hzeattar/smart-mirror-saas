@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 import cv2
@@ -15,9 +16,12 @@ from .fitting import (
     recommend_size,
 )
 from .geometry import PoseGeometrySmoother
+from .gestures import GestureEngine, GestureStatus
+from .hand_tracker import HandTracker
 from .mirror_ui import MirrorUiModel, clicked_action, draw_mirror_ui
 from .overlay import overlay_garment
 from .pose_tracker import PoseTracker
+from .snapshots import SnapshotMetadata, save_snapshot
 
 
 class SmartMirrorApp:
@@ -27,6 +31,7 @@ class SmartMirrorApp:
         self.args = args
         self.data_dir = Path(args.data_dir)
         self.data_dir.mkdir(parents=True, exist_ok=True)
+        self.snapshot_dir = Path(args.snapshot_dir)
         self.calibration_path = self.data_dir / "calibration.json"
         self.calibration = CalibrationProfile.load(self.calibration_path, args.reference_shoulder_cm)
         self.pose_smoother = PoseGeometrySmoother(args.smoothing)
@@ -40,8 +45,12 @@ class SmartMirrorApp:
         self.body = BodyMeasurements(None, None, None, None, None)
         self.hitboxes = {}
         self.fullscreen = False
+        self.controls_visible = True
         self.last_pose = None
         self.last_pose_at = 0.0
+        self.gesture_status = GestureStatus()
+        self.snapshot_message = ""
+        self.snapshot_message_until = 0.0
 
     @property
     def product(self) -> CatalogProduct:
@@ -201,6 +210,10 @@ class SmartMirrorApp:
             self.change_size(1)
         elif action == "auto_size":
             self.auto_size = not self.auto_size
+        elif action == "show_controls":
+            self.controls_visible = True
+        elif action == "hide_controls":
+            self.controls_visible = False
 
     def on_mouse(self, event, x, y, _flags, _parameter) -> None:
         if event == cv2.EVENT_LBUTTONUP:
@@ -210,6 +223,24 @@ class SmartMirrorApp:
         self.fullscreen = not self.fullscreen
         mode = cv2.WINDOW_FULLSCREEN if self.fullscreen else cv2.WINDOW_NORMAL
         cv2.setWindowProperty(self.WINDOW_NAME, cv2.WND_PROP_FULLSCREEN, mode)
+
+    def capture_snapshot(self, frame, selected_label: str, confidence: int, now: float) -> None:
+        metadata = SnapshotMetadata(
+            product_id=self.product.id,
+            product_name=self.product.name,
+            price=self.product.formatted_price(),
+            size_label=selected_label,
+            fit_confidence=confidence,
+            captured_at=datetime.now(timezone.utc).isoformat(),
+        )
+        try:
+            path = save_snapshot(frame, self.snapshot_dir, metadata)
+            self.snapshot_message = f"PHOTO SAVED: {path.name}"
+            print(f"Snapshot saved: {path}")
+        except Exception as exc:
+            self.snapshot_message = "PHOTO SAVE FAILED"
+            print(f"Snapshot error: {exc}")
+        self.snapshot_message_until = now + 3.0
 
     def run(self) -> None:
         self.setup_catalog()
@@ -222,6 +253,12 @@ class SmartMirrorApp:
         width = int(camera.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(camera.get(cv2.CAP_PROP_FRAME_HEIGHT))
         tracker = PoseTracker(Path(self.args.model), width, height)
+        hand_tracker = HandTracker() if self.args.gestures else None
+        gesture_engine = GestureEngine(
+            cooldown_seconds=self.args.gesture_cooldown,
+            hold_seconds=self.args.gesture_hold,
+            swipe_distance=self.args.swipe_distance,
+        ) if hand_tracker else None
         last_heartbeat = 0.0
 
         cv2.namedWindow(self.WINDOW_NAME, cv2.WINDOW_NORMAL)
@@ -236,6 +273,8 @@ class SmartMirrorApp:
                     frame = cv2.flip(frame, 1)
 
                 now = time.monotonic()
+                hands = hand_tracker.detect(frame) if hand_tracker else []
+                self.gesture_status = gesture_engine.update(hands, now) if gesture_engine else GestureStatus()
                 detected_pose = tracker.detect(frame, int(now * 1000))
                 if detected_pose:
                     self.last_pose = self.pose_smoother.update(detected_pose)
@@ -274,6 +313,17 @@ class SmartMirrorApp:
                     self.recommendation,
                     self.calibration.calibrated,
                 )
+
+                if self.gesture_status.event:
+                    event = self.gesture_status.event
+                    if event.action == "snapshot":
+                        self.capture_snapshot(frame.copy(), selected_label, confidence, now)
+                    else:
+                        self.handle_action(event.action)
+
+                if hand_tracker and self.args.gesture_debug:
+                    hand_tracker.draw(frame)
+
                 shoulder_text = (
                     f"Shoulder: {self.body.shoulder_width_cm:.1f} cm"
                     if self.body.shoulder_width_cm is not None
@@ -284,6 +334,9 @@ class SmartMirrorApp:
                     if self.body.chest_width_cm is not None and self.body.waist_width_cm is not None
                     else "Automatic size uses calibrated body proportions"
                 )
+                if now >= self.snapshot_message_until:
+                    self.snapshot_message = ""
+
                 self.hitboxes = draw_mirror_ui(
                     frame,
                     MirrorUiModel(
@@ -298,6 +351,12 @@ class SmartMirrorApp:
                         auto_size=self.auto_size,
                         shoulder_text=shoulder_text,
                         chest_text=chest_text,
+                        gestures_enabled=bool(hand_tracker),
+                        gesture_label=self.gesture_status.active_label,
+                        gesture_progress=self.gesture_status.progress,
+                        last_gesture_action=self.gesture_status.last_action,
+                        controls_visible=self.controls_visible,
+                        snapshot_message=self.snapshot_message,
                     ),
                 )
 
@@ -324,6 +383,8 @@ class SmartMirrorApp:
                     self.auto_size = not self.auto_size
                 elif key in (ord("f"), ord("F")):
                     self.toggle_fullscreen()
+                elif key in (ord("s"), ord("S")):
+                    self.capture_snapshot(frame.copy(), selected_label, confidence, now)
 
                 if self.api and now - last_heartbeat > 30:
                     try:
@@ -333,5 +394,7 @@ class SmartMirrorApp:
                     last_heartbeat = now
         finally:
             tracker.close()
+            if hand_tracker:
+                hand_tracker.close()
             camera.release()
             cv2.destroyAllWindows()
