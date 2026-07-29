@@ -11,6 +11,7 @@ class DemoGarmentFitMetadataSeeder extends Seeder
     {
         $catalog = [
             'TSHIRT-001' => [
+                'asset' => '/demo-garments/real-mint-tshirt.webp',
                 'garment_type' => 'tshirt',
                 'fit_profile' => [
                     'shoulder_expand' => 0.10,
@@ -26,6 +27,7 @@ class DemoGarmentFitMetadataSeeder extends Seeder
                 ],
             ],
             'HOODIE-001' => [
+                'asset' => '/demo-garments/real-navy-hoodie.webp',
                 'garment_type' => 'hoodie',
                 'fit_profile' => [
                     'shoulder_expand' => 0.17,
@@ -41,6 +43,7 @@ class DemoGarmentFitMetadataSeeder extends Seeder
                 ],
             ],
             'POLO-001' => [
+                'asset' => '/demo-garments/real-coral-polo.webp',
                 'garment_type' => 'polo',
                 'fit_profile' => [
                     'shoulder_expand' => 0.09,
@@ -67,6 +70,8 @@ class DemoGarmentFitMetadataSeeder extends Seeder
                 'garment_type' => $metadata['garment_type'],
                 'fit_profile' => $metadata['fit_profile'],
                 'texture_anchor' => $metadata['texture_anchor'],
+                'base_image_url' => $metadata['asset'],
+                'texture_image_url' => $metadata['asset'],
             ]);
 
             foreach ($metadata['sizes'] as $label => $values) {
