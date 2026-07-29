@@ -6,6 +6,7 @@ from pathlib import Path
 import cv2
 
 from .app import SmartMirrorApp
+from .camera import open_camera
 from .fitting import estimate_body_measurements, fit_confidence, recommend_size
 from .gestures import GestureEngine, GestureStatus
 from .hand_tracker import HandTracker
@@ -76,11 +77,13 @@ class SmartMirrorAppV2(SmartMirrorApp):
 
     def run(self) -> None:
         self.setup_catalog()
-        camera = cv2.VideoCapture(self.args.camera)
-        camera.set(cv2.CAP_PROP_FRAME_WIDTH, self.args.width)
-        camera.set(cv2.CAP_PROP_FRAME_HEIGHT, self.args.height)
-        if not camera.isOpened():
-            raise RuntimeError(f"Cannot open camera index {self.args.camera}.")
+        camera, camera_backend = open_camera(
+            self.args.camera,
+            self.args.width,
+            self.args.height,
+            getattr(self.args, "camera_backend", "auto"),
+        )
+        print(f"Opened camera {self.args.camera} using {camera_backend} backend")
 
         width = int(camera.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(camera.get(cv2.CAP_PROP_FRAME_HEIGHT))

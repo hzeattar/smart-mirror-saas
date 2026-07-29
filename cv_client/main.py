@@ -4,6 +4,7 @@ import argparse
 from pathlib import Path
 
 from smart_mirror.app_v2 import SmartMirrorAppV2
+from smart_mirror.camera import scan_cameras
 
 
 def parser() -> argparse.ArgumentParser:
@@ -17,6 +18,9 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--data-dir", default=str(base / ".smart-mirror"))
     p.add_argument("--snapshot-dir", default=str(base / ".smart-mirror" / "snapshots"))
     p.add_argument("--camera", type=int, default=0)
+    p.add_argument("--camera-backend", choices=["auto", "dshow", "msmf", "any"], default="auto")
+    p.add_argument("--scan-cameras", action="store_true")
+    p.add_argument("--scan-max-camera", type=int, default=5)
     p.add_argument("--width", type=int, default=1280)
     p.add_argument("--height", type=int, default=720)
     p.add_argument("--reference-shoulder-cm", type=float, default=44.0)
@@ -32,4 +36,17 @@ def parser() -> argparse.ArgumentParser:
 
 
 if __name__ == "__main__":
-    SmartMirrorAppV2(parser().parse_args()).run()
+    args = parser().parse_args()
+    if args.scan_cameras:
+        cameras = scan_cameras(args.scan_max_camera, args.width, args.height, args.camera_backend)
+        if cameras:
+            for camera in cameras:
+                print(
+                    f"camera={camera.index} backend={camera.backend} "
+                    f"resolution={camera.width}x{camera.height}"
+                )
+        else:
+            print("No cameras opened. Check Windows camera privacy permissions and close apps using the camera.")
+        raise SystemExit(0)
+
+    SmartMirrorAppV2(args).run()

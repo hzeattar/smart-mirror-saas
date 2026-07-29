@@ -9,6 +9,7 @@ import cv2
 import mediapipe as mp
 
 from smart_mirror.hand_tracker import HandTracker
+from smart_mirror.camera import open_camera, scan_cameras
 from smart_mirror.pose_tracker import PoseTracker
 
 
@@ -16,6 +17,9 @@ def parser() -> argparse.ArgumentParser:
     base = Path(__file__).resolve().parent
     command = argparse.ArgumentParser(description="Validate the Smart Mirror camera and MediaPipe runtime.")
     command.add_argument("--camera", type=int, default=0)
+    command.add_argument("--camera-backend", choices=["auto", "dshow", "msmf", "any"], default="auto")
+    command.add_argument("--scan-cameras", action="store_true")
+    command.add_argument("--scan-max-camera", type=int, default=5)
     command.add_argument("--width", type=int, default=1280)
     command.add_argument("--height", type=int, default=720)
     command.add_argument("--frames", type=int, default=90)
@@ -49,15 +53,23 @@ def run(args: argparse.Namespace) -> int:
         "HandLandmarker API is missing",
     )
 
+    if args.scan_cameras:
+        cameras = scan_cameras(args.scan_max_camera, args.width, args.height, args.camera_backend)
+        check(bool(cameras), "At least one camera opened", "No cameras opened")
+        for camera in cameras:
+            print(
+                f"[PASS] camera={camera.index} backend={camera.backend} "
+                f"resolution={camera.width}x{camera.height}"
+            )
+        return 0
+
     pose_model = Path(args.pose_model)
     hand_model = Path(args.hand_model)
     check(pose_model.is_file(), f"Pose model found: {pose_model}", "Pose model missing; run download_model.py")
     check(hand_model.is_file(), f"Hand model found: {hand_model}", "Hand model missing; run download_model.py")
 
-    camera = cv2.VideoCapture(args.camera)
-    camera.set(cv2.CAP_PROP_FRAME_WIDTH, args.width)
-    camera.set(cv2.CAP_PROP_FRAME_HEIGHT, args.height)
-    check(camera.isOpened(), f"Camera {args.camera} opened", f"Cannot open camera index {args.camera}")
+    camera, camera_backend = open_camera(args.camera, args.width, args.height, args.camera_backend)
+    check(True, f"Camera {args.camera} opened with {camera_backend}", f"Cannot open camera index {args.camera}")
 
     width = int(camera.get(cv2.CAP_PROP_FRAME_WIDTH)) or args.width
     height = int(camera.get(cv2.CAP_PROP_FRAME_HEIGHT)) or args.height
