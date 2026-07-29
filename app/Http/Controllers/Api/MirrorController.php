@@ -89,6 +89,11 @@ class MirrorController extends Controller
             return $value;
         }
 
-        return rtrim($request->root(), '/').'/'.ltrim($value, '/');
+        $root = rtrim($request->root(), '/');
+        if (app()->environment('production')) {
+            $root = preg_replace('#^http://#i', 'https://', $root);
+        }
+
+        return $root.'/'.ltrim($value, '/');
     }
 }
