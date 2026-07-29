@@ -1,45 +1,18 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from math import acos, degrees, hypot
 from typing import Iterable
 
 import cv2
 import mediapipe as mp
 
-
-@dataclass(frozen=True)
-class HandPoint:
-    x: float
-    y: float
-    z: float = 0.0
-
-
-@dataclass(frozen=True)
-class HandObservation:
-    handedness: str
-    score: float
-    landmarks: tuple[HandPoint, ...]
-    palm_center: HandPoint
-    gesture: str
-    gesture_confidence: float
+from .hand_types import HandObservation, HandPoint
 
 
 class HandTracker:
-    """Real-time MediaPipe hand tracking with lightweight deterministic gestures.
+    """Real-time MediaPipe hand tracking with lightweight deterministic gestures."""
 
-    The classifier intentionally uses geometry instead of a remote model so the mirror
-    keeps working offline. It recognises the small gesture vocabulary needed by the
-    kiosk and leaves temporal decisions such as hold duration and swipe direction to
-    GestureEngine.
-    """
-
-    _FINGER_CHAINS = (
-        (5, 6, 8),
-        (9, 10, 12),
-        (13, 14, 16),
-        (17, 18, 20),
-    )
+    _FINGER_CHAINS = ((5, 6, 8), (9, 10, 12), (13, 14, 16), (17, 18, 20))
 
     def __init__(
         self,
@@ -85,7 +58,6 @@ class HandTracker:
         palm_width = max(cls._distance(points[5], points[17]), 1e-6)
         extended = [cls._finger_extended(points, *chain) for chain in cls._FINGER_CHAINS]
         extended_count = sum(extended)
-
         thumb_angle = cls._angle(points[2], points[3], points[4])
         thumb_extended = thumb_angle > 145 and cls._distance(points[4], points[5]) > palm_width * 0.45
         pinch_ratio = cls._distance(points[4], points[8]) / palm_width
@@ -93,21 +65,16 @@ class HandTracker:
 
         if pinch_ratio < 0.34:
             return "pinch", max(0.0, min(1.0, 1.0 - pinch_ratio / 0.34))
-
         if thumb_extended and extended_count == 0 and points[4].y < wrist.y - palm_width * 0.35:
             vertical = max(0.0, min(1.0, (wrist.y - points[4].y) / max(palm_width, 1e-6)))
             return "thumbs_up", min(1.0, 0.65 + vertical * 0.25)
-
         if extended_count >= 3:
             spread = cls._distance(points[8], points[20]) / palm_width
             return "open_palm", min(1.0, 0.60 + max(0.0, spread - 1.0) * 0.20)
-
         if extended_count == 2 and extended[0] and extended[1]:
             return "two_fingers", 0.85
-
         if extended_count == 0 and fingertips_to_palm < palm_width * 0.95:
             return "fist", 0.88
-
         return "unknown", 0.35
 
     @staticmethod
@@ -125,13 +92,11 @@ class HandTracker:
         results = self._hands.process(rgb)
         self._last_results = results
         observations: list[HandObservation] = []
-
         if not results.multi_hand_landmarks:
             return observations
 
         handedness_entries: Iterable = results.multi_handedness or []
         handedness_entries = list(handedness_entries)
-
         for index, hand_landmarks in enumerate(results.multi_hand_landmarks):
             points = tuple(HandPoint(lm.x, lm.y, lm.z) for lm in hand_landmarks.landmark)
             classification = handedness_entries[index].classification[0] if index < len(handedness_entries) else None
@@ -148,7 +113,6 @@ class HandTracker:
                     gesture_confidence=gesture_confidence,
                 )
             )
-
         return observations
 
     def draw(self, frame) -> None:
