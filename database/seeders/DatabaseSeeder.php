@@ -62,7 +62,10 @@ class DatabaseSeeder extends Seeder
             ]);
         }
 
-        $this->call(DemoGarmentCatalogSeeder::class);
+        $this->call([
+            DemoGarmentCatalogSeeder::class,
+            DemoGarmentFitMetadataSeeder::class,
+        ]);
 
         Mirror::query()->firstOrCreate(
             ['tenant_id' => $tenant->id, 'location_name' => 'Main Store Mirror'],
