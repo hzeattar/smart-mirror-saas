@@ -1,35 +1,56 @@
 from __future__ import annotations
 
 from math import acos, degrees, hypot
-from typing import Iterable
+from pathlib import Path
 
 import cv2
 import mediapipe as mp
+import numpy as np
 
 from .hand_types import HandObservation, HandPoint
 
 
 class HandTracker:
-    """Real-time MediaPipe hand tracking with lightweight deterministic gestures."""
+    """MediaPipe Tasks hand tracking compatible with MediaPipe 0.10.30+."""
 
     _FINGER_CHAINS = ((5, 6, 8), (9, 10, 12), (13, 14, 16), (17, 18, 20))
+    _CONNECTIONS = (
+        (0, 1), (1, 2), (2, 3), (3, 4),
+        (0, 5), (5, 6), (6, 7), (7, 8),
+        (0, 9), (9, 10), (10, 11), (11, 12),
+        (0, 13), (13, 14), (14, 15), (15, 16),
+        (0, 17), (17, 18), (18, 19), (19, 20),
+        (5, 9), (9, 13), (13, 17),
+    )
 
     def __init__(
         self,
+        model_path: Path,
+        width: int,
+        height: int,
         max_hands: int = 2,
         min_detection_confidence: float = 0.60,
         min_tracking_confidence: float = 0.55,
     ) -> None:
-        self._hands = mp.solutions.hands.Hands(
-            static_image_mode=False,
-            max_num_hands=max_hands,
-            model_complexity=1,
-            min_detection_confidence=min_detection_confidence,
+        if not model_path.exists():
+            raise FileNotFoundError(
+                f"MediaPipe hand model not found: {model_path}. Run download_model.py first."
+            )
+
+        self.width = width
+        self.height = height
+        self._last_observations: list[HandObservation] = []
+
+        base_options = mp.tasks.BaseOptions(model_asset_path=str(model_path))
+        options = mp.tasks.vision.HandLandmarkerOptions(
+            base_options=base_options,
+            running_mode=mp.tasks.vision.RunningMode.VIDEO,
+            num_hands=max_hands,
+            min_hand_detection_confidence=min_detection_confidence,
+            min_hand_presence_confidence=min_detection_confidence,
             min_tracking_confidence=min_tracking_confidence,
         )
-        self._drawing = mp.solutions.drawing_utils
-        self._connections = mp.solutions.hands.HAND_CONNECTIONS
-        self._last_results = None
+        self._landmarker = mp.tasks.vision.HandLandmarker.create_from_options(options)
 
     @staticmethod
     def _distance(a: HandPoint, b: HandPoint) -> float:
@@ -86,22 +107,19 @@ class HandTracker:
             sum(point.z for point in selected) / len(selected),
         )
 
-    def detect(self, frame) -> list[HandObservation]:
-        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        rgb.flags.writeable = False
-        results = self._hands.process(rgb)
-        self._last_results = results
-        observations: list[HandObservation] = []
-        if not results.multi_hand_landmarks:
-            return observations
+    def detect(self, frame: np.ndarray, timestamp_ms: int) -> list[HandObservation]:
+        rgb = np.ascontiguousarray(frame[:, :, ::-1])
+        result = self._landmarker.detect_for_video(
+            mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb),
+            timestamp_ms,
+        )
 
-        handedness_entries: Iterable = results.multi_handedness or []
-        handedness_entries = list(handedness_entries)
-        for index, hand_landmarks in enumerate(results.multi_hand_landmarks):
-            points = tuple(HandPoint(lm.x, lm.y, lm.z) for lm in hand_landmarks.landmark)
-            classification = handedness_entries[index].classification[0] if index < len(handedness_entries) else None
-            label = classification.label if classification else "Unknown"
-            score = float(classification.score) if classification else 0.0
+        observations: list[HandObservation] = []
+        for index, landmarks in enumerate(result.hand_landmarks or []):
+            points = tuple(HandPoint(float(lm.x), float(lm.y), float(lm.z or 0.0)) for lm in landmarks)
+            handedness = result.handedness[index][0] if index < len(result.handedness) and result.handedness[index] else None
+            label = str(getattr(handedness, "category_name", None) or getattr(handedness, "display_name", None) or "Unknown")
+            score = float(getattr(handedness, "score", 0.0) or 0.0)
             gesture, gesture_confidence = self._classify(points)
             observations.append(
                 HandObservation(
@@ -113,19 +131,24 @@ class HandTracker:
                     gesture_confidence=gesture_confidence,
                 )
             )
+
+        self._last_observations = observations
         return observations
 
-    def draw(self, frame) -> None:
-        if not self._last_results or not self._last_results.multi_hand_landmarks:
-            return
-        for landmarks in self._last_results.multi_hand_landmarks:
-            self._drawing.draw_landmarks(
-                frame,
-                landmarks,
-                self._connections,
-                self._drawing.DrawingSpec(color=(88, 224, 181), thickness=2, circle_radius=2),
-                self._drawing.DrawingSpec(color=(94, 168, 255), thickness=2),
-            )
+    def draw(self, frame: np.ndarray) -> None:
+        height, width = frame.shape[:2]
+        for observation in self._last_observations:
+            pixels = [
+                (
+                    int(max(0.0, min(1.0, point.x)) * width),
+                    int(max(0.0, min(1.0, point.y)) * height),
+                )
+                for point in observation.landmarks
+            ]
+            for start, end in self._CONNECTIONS:
+                cv2.line(frame, pixels[start], pixels[end], (94, 168, 255), 2, cv2.LINE_AA)
+            for point in pixels:
+                cv2.circle(frame, point, 3, (88, 224, 181), -1, cv2.LINE_AA)
 
     def close(self) -> None:
-        self._hands.close()
+        self._landmarker.close()
