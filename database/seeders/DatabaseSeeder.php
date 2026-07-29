@@ -62,6 +62,8 @@ class DatabaseSeeder extends Seeder
             ]);
         }
 
+        $this->call(DemoGarmentCatalogSeeder::class);
+
         Mirror::query()->firstOrCreate(
             ['tenant_id' => $tenant->id, 'location_name' => 'Main Store Mirror'],
             ['public_id' => (string) Str::uuid(), 'pairing_code' => 'DEMO2026', 'status' => MirrorStatus::Pending]
