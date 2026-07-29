@@ -38,7 +38,7 @@ class PhotographicGarmentCatalogSeeder extends Seeder
         Product::query()
             ->where('tenant_id', $tenant->id)
             ->whereIn('sku', ['TSHIRT-001', 'HOODIE-001', 'POLO-001'])
-            ->update(['status' => ProductStatus::Inactive]);
+            ->update(['status' => ProductStatus::Inactive->value]);
 
         $products = [
             [
