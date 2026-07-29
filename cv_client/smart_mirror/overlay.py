@@ -30,6 +30,28 @@ def crop_transparent(image: np.ndarray) -> np.ndarray:
     return image[ys.min() : ys.max() + 1, xs.min() : xs.max() + 1]
 
 
+def crop_texture_anchor(image: np.ndarray, anchor: dict | None) -> np.ndarray:
+    if not anchor or image is None or image.size == 0:
+        return image
+
+    height, width = image.shape[:2]
+
+    def ratio(key: str) -> float:
+        try:
+            return max(0.0, min(0.45, float(anchor.get(key, 0) or 0)))
+        except (TypeError, ValueError):
+            return 0.0
+
+    left = int(width * ratio("left"))
+    right = width - int(width * ratio("right"))
+    top = int(height * ratio("top"))
+    bottom = height - int(height * ratio("bottom"))
+
+    if right - left < 4 or bottom - top < 4:
+        return image
+    return image[top:bottom, left:right]
+
+
 def _ordered(a: Point, b: Point) -> tuple[Point, Point]:
     return (a, b) if a.x <= b.x else (b, a)
 
@@ -104,12 +126,13 @@ def overlay_garment(
     top_offset_ratio: float = 0.11,
     hem_extension_ratio: float = 0.20,
     preserve_forearms: bool = True,
+    texture_anchor: dict | None = None,
 ) -> tuple[np.ndarray, np.ndarray | None]:
     if garment is None or garment.size == 0 or pose.shoulder_pixels < 5 or pose.torso_pixels < 5:
         return frame, None
 
     original = frame.copy()
-    texture = crop_transparent(garment)
+    texture = crop_texture_anchor(crop_transparent(garment), texture_anchor)
     if texture is None or texture.size == 0:
         return frame, None
 
