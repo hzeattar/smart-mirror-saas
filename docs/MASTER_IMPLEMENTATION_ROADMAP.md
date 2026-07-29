@@ -19,11 +19,26 @@ This foundation is not the final virtual try-on experience. The old 2D garment w
 
 ### Phase 1 — Real garment ingestion and Smart Gesture UI — IN PROGRESS
 
-#### Implemented in the current branch
-- Created protected implementation branch: `phase-2-real-garments-smart-ui`.
-- Added `HandCursor` with index-finger pointing, smoothing, hit testing, dwell progress and action cooldown.
+#### Implemented in branch `phase-2-real-garments-smart-ui`
+- Added `HandCursor` with index-finger pointing, smoothing, hit testing, dwell progress and duplicate-trigger cooldown.
 - Added a dedicated `point` hand gesture to the MediaPipe hand classifier.
-- Added automated tests for dwell selection, moving between targets and duplicate-trigger prevention.
+- Connected the cursor to the live camera loop through `SmartMirrorAppV2`.
+- Made the V2 interaction runtime the default entry point in `cv_client/main.py` on this branch.
+- Added a compact retail UI with:
+  - product carousel;
+  - previous and next product preview labels;
+  - small price and size card;
+  - automatic-size control;
+  - index-finger cursor;
+  - circular dwell confirmation;
+  - reduced screen obstruction.
+- Improved swipe navigation with:
+  - minimum horizontal distance;
+  - minimum velocity;
+  - direction-consistency checks;
+  - rejection of slow hand drift;
+  - rejection of zigzag motion;
+  - per-action cooldown profiles.
 - Added a real-garment preprocessing pipeline with:
   - optional rembg background removal;
   - conservative border-colour fallback;
@@ -32,30 +47,57 @@ This foundation is not the final virtual try-on experience. The old 2D garment w
   - quality validation;
   - SHA-256 and JSON metadata output.
 - Added `prepare_garment.py` command-line importer.
-- Added automated tests for alpha bounds, centring and metadata generation.
+- Added automatic remote-photo preparation and transparent PNG caching under `.smart-mirror/garment-cache`.
+- Added five photographic demo catalog products:
+  - T-shirt;
+  - business shirt;
+  - denim jacket;
+  - trousers;
+  - suit jacket.
+- Added EGP prices and S/M/L/XL size charts.
+- Disabled the three legacy cartoon demo products in the photographic catalog seeder.
+- Added explicit source, author and licence metadata in `docs/PHOTOGRAPHIC_GARMENT_SOURCES.json`.
+- Added automated tests for:
+  - cursor dwell selection;
+  - moving between targets;
+  - duplicate-trigger prevention;
+  - left and right swipe;
+  - slow-drift rejection;
+  - zigzag rejection;
+  - garment alpha bounds;
+  - centring and metadata generation.
+
+#### Verification completed
+- GestureEngine unit tests: 7 passed.
+- HandCursor dwell and cooldown checks: passed.
+- Python syntax compilation for V2 runtime, smart UI, gesture, API-client and asset-processing modules: passed.
+- `PhotographicGarmentCatalogSeeder.php`: PHP syntax passed.
+- `DatabaseSeeder.php`: PHP syntax passed.
 
 #### Remaining work inside this phase
-- Connect `HandCursor` to the live application loop.
-- Replace the current large side arrows and bottom control block with a compact product carousel and confirmation ring.
-- Add swipe velocity/inertia filtering and per-action cooldown profiles.
-- Add photographic assets for T-shirt, shirt, hoodie/jacket, trousers and suit with attribution/license metadata where required.
-- Link all five products to categories, prices, colour variants and multi-size charts.
-- Add backend/admin garment-quality status and prepared-asset metadata.
-- Run the full Python test suite.
-- Perform local Windows camera acceptance.
-- Merge only after review, then verify the resulting Railway deployment.
-
-#### Goals
-1. Replace all cartoon/demo garment art with front-facing photographic garment assets.
-2. Support real garment categories: T-shirt, shirt, hoodie/jacket, trousers and suit.
-3. Build an ingestion pipeline that validates, removes background, normalizes canvas, extracts garment bounds and records fit metadata.
-4. Replace the current large static controls with a retail-grade gesture interface.
-5. Add hand cursor, dwell selection, swipe inertia, confirmation ring and per-action cooldowns.
-6. Keep keyboard/touch controls as accessible fallbacks.
+- Run the complete Python test suite in the real project virtual environment on Windows.
+- Test `SmartMirrorAppV2` with the target webcam and verify:
+  - smooth cursor movement;
+  - dwell selection;
+  - no repeated accidental product changes;
+  - swipe reliability;
+  - compact UI readability.
+- Verify that all five external photographic files download successfully from the target Windows/network environment.
+- Verify first-run rembg preparation and subsequent cache reuse.
+- Add backend/admin display of source licence and prepared-asset quality metadata.
+- Add category-aware temporary fallback rendering:
+  - tops anchored to shoulders and torso;
+  - trousers anchored to hips and legs;
+  - suit separated into jacket/trouser components when applicable.
+- Do not represent the temporary 2D fallback as photorealistic try-on. Photorealistic wearing begins in Phase 2.
+- Review the complete branch diff against `main`.
+- Merge only after local Windows acceptance.
+- Verify the exact merged commit is successfully deployed by Railway.
+- Re-test the photographic catalog against the deployed API after Railway seeding.
 
 #### Acceptance criteria
-- At least five photographic garment products available in the demo catalog.
-- Every asset is linked to a real category, price and multi-size chart.
+- At least five photographic garment products available in the deployed demo catalog.
+- Every asset is linked to a real category, EGP price, source licence and multi-size chart.
 - Product switch can be completed by gesture without duplicate accidental triggers.
 - Hand cursor and dwell selection work without covering the body.
 - The interface shows product name, formatted price, selected/recommended size and current gesture state.
