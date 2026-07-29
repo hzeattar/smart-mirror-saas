@@ -16,9 +16,24 @@ class Product extends Model
     use HasFactory, SoftDeletes;
 
     protected $fillable = [
-        'tenant_id', 'category_id', 'sku', 'name', 'description', 'base_image_url',
-        'base_image_path', 'texture_image_url', 'texture_image_path', 'unit_price',
-        'currency', 'status', 'background_removal_status', 'background_removal_error', 'processed_at',
+        'tenant_id',
+        'category_id',
+        'sku',
+        'name',
+        'description',
+        'garment_type',
+        'fit_profile',
+        'texture_anchor',
+        'base_image_url',
+        'base_image_path',
+        'texture_image_url',
+        'texture_image_path',
+        'unit_price',
+        'currency',
+        'status',
+        'background_removal_status',
+        'background_removal_error',
+        'processed_at',
     ];
 
     protected function casts(): array
@@ -27,13 +42,34 @@ class Product extends Model
             'unit_price' => 'decimal:2',
             'status' => ProductStatus::class,
             'background_removal_status' => BackgroundRemovalStatus::class,
+            'fit_profile' => 'array',
+            'texture_anchor' => 'array',
             'processed_at' => 'datetime',
         ];
     }
 
-    public function tenant(): BelongsTo { return $this->belongsTo(Tenant::class); }
-    public function category(): BelongsTo { return $this->belongsTo(Category::class); }
-    public function sizingCharts(): HasMany { return $this->hasMany(SizingChart::class)->orderBy('sort_order'); }
-    public function orderItems(): HasMany { return $this->hasMany(OrderItem::class); }
-    public function scopeForTenant(Builder $query, int $tenantId): Builder { return $query->where('tenant_id', $tenantId); }
+    public function tenant(): BelongsTo
+    {
+        return $this->belongsTo(Tenant::class);
+    }
+
+    public function category(): BelongsTo
+    {
+        return $this->belongsTo(Category::class);
+    }
+
+    public function sizingCharts(): HasMany
+    {
+        return $this->hasMany(SizingChart::class)->orderBy('sort_order');
+    }
+
+    public function orderItems(): HasMany
+    {
+        return $this->hasMany(OrderItem::class);
+    }
+
+    public function scopeForTenant(Builder $query, int $tenantId): Builder
+    {
+        return $query->where('tenant_id', $tenantId);
+    }
 }
