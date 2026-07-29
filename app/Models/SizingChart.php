@@ -16,6 +16,10 @@ class SizingChart extends Model
         'size_label',
         'shoulder_width_cm',
         'chest_width_cm',
+        'waist_width_cm',
+        'hip_width_cm',
+        'sleeve_length_cm',
+        'fit_ease_cm',
         'height_cm',
         'sort_order',
     ];
@@ -25,6 +29,10 @@ class SizingChart extends Model
         return [
             'shoulder_width_cm' => 'decimal:2',
             'chest_width_cm' => 'decimal:2',
+            'waist_width_cm' => 'decimal:2',
+            'hip_width_cm' => 'decimal:2',
+            'sleeve_length_cm' => 'decimal:2',
+            'fit_ease_cm' => 'decimal:2',
             'height_cm' => 'decimal:2',
             'sort_order' => 'integer',
         ];
