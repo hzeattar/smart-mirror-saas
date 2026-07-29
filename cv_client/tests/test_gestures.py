@@ -22,7 +22,7 @@ class GestureEngineTests(unittest.TestCase):
     def test_open_palm_swipe_left_selects_next_garment(self):
         engine = GestureEngine(cooldown_seconds=0.4, swipe_distance=0.18)
         status = None
-        for timestamp, x in ((0.0, 0.78), (0.12, 0.69), (0.24, 0.57), (0.36, 0.45)):
+        for timestamp, x in ((0.0, 0.82), (0.09, 0.75), (0.18, 0.66), (0.27, 0.55), (0.36, 0.43)):
             status = engine.update([observation("open_palm", x)], timestamp)
         self.assertIsNotNone(status)
         self.assertIsNotNone(status.event)
@@ -31,10 +31,24 @@ class GestureEngineTests(unittest.TestCase):
     def test_open_palm_swipe_right_selects_previous_garment(self):
         engine = GestureEngine(cooldown_seconds=0.4, swipe_distance=0.18)
         status = None
-        for timestamp, x in ((0.0, 0.20), (0.12, 0.29), (0.24, 0.42), (0.36, 0.55)):
+        for timestamp, x in ((0.0, 0.18), (0.09, 0.25), (0.18, 0.35), (0.27, 0.46), (0.36, 0.58)):
             status = engine.update([observation("open_palm", x)], timestamp)
         self.assertIsNotNone(status.event)
         self.assertEqual("previous", status.event.action)
+
+    def test_slow_open_palm_drift_does_not_trigger(self):
+        engine = GestureEngine(cooldown_seconds=0.4, swipe_distance=0.18, swipe_velocity=0.34)
+        status = None
+        for timestamp, x in ((0.0, 0.80), (0.4, 0.74), (0.8, 0.68), (1.2, 0.62), (1.6, 0.56)):
+            status = engine.update([observation("open_palm", x)], timestamp)
+        self.assertIsNone(status.event)
+
+    def test_zigzag_motion_does_not_trigger(self):
+        engine = GestureEngine(cooldown_seconds=0.4, swipe_distance=0.18)
+        status = None
+        for timestamp, x in ((0.0, 0.80), (0.08, 0.69), (0.16, 0.76), (0.24, 0.58), (0.32, 0.66), (0.40, 0.49)):
+            status = engine.update([observation("open_palm", x)], timestamp)
+        self.assertIsNone(status.event)
 
     def test_thumbs_up_hold_saves_photo_once(self):
         engine = GestureEngine(cooldown_seconds=1.0, hold_seconds=0.6)
