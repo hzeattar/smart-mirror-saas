@@ -14,7 +14,25 @@ class MirrorController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
-        return response()->json(['mirrors' => Mirror::query()->forTenant($request->user()->tenant_id)->latest()->get()]);
+        return response()->json([
+            'mirrors' => Mirror::query()
+                ->forTenant($request->user()->tenant_id)
+                ->with(['tryOnJobs' => fn ($query) => $query->latest()->limit(1)])
+                ->latest()
+                ->get()
+                ->map(fn (Mirror $mirror) => [
+                    ...$mirror->toArray(),
+                    'latest_try_on_job' => $mirror->tryOnJobs->first()?->only([
+                        'public_id',
+                        'status',
+                        'provider',
+                        'created_at',
+                        'completed_at',
+                        'failed_at',
+                        'error',
+                    ]),
+                ]),
+        ]);
     }
 
     public function store(Request $request): JsonResponse

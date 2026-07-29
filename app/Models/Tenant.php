@@ -48,4 +48,9 @@ class Tenant extends Model
     {
         return $this->hasMany(CheckoutSession::class);
     }
+
+    public function tryOnJobs(): HasMany
+    {
+        return $this->hasMany(TryOnJob::class);
+    }
 }

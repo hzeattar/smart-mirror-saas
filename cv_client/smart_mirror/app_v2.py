@@ -6,6 +6,7 @@ from pathlib import Path
 import cv2
 
 from .app import SmartMirrorApp
+from .ai_tryon import AiTryOnState, make_qr_image, save_ai_snapshot
 from .camera import open_camera
 from .fitting import estimate_body_measurements, fit_confidence, recommend_size
 from .gestures import GestureEngine, GestureStatus
@@ -14,6 +15,7 @@ from .interaction import CursorState, HandCursor
 from .lower_overlay import lower_body_ready, overlay_trousers
 from .overlay import overlay_garment
 from .pose_tracker import PoseTracker
+from .session_log import SessionLogger
 from .smart_ui import SmartUiModel, clicked_action, draw_smart_ui
 
 
@@ -25,6 +27,11 @@ class SmartMirrorAppV2(SmartMirrorApp):
     def __init__(self, args):
         super().__init__(args)
         self.cursor_state = CursorState()
+        self.ai_tryon = AiTryOnState(enabled=bool(getattr(args, "ai_tryon", False)))
+        self.session_log = SessionLogger(args.data_dir, bool(getattr(args, "session_log", True)))
+        self._frame_count = 0
+        self._fps_started_at = time.monotonic()
+        self._pending_ai_tryon = False
 
     def _neighbour_name(self, delta: int) -> str:
         if len(self.products) < 2:
@@ -37,6 +44,105 @@ class SmartMirrorAppV2(SmartMirrorApp):
     def on_mouse(self, event, x, y, _flags, _parameter) -> None:
         if event == cv2.EVENT_LBUTTONUP:
             self.handle_action(clicked_action(self.hitboxes, x, y))
+
+    def handle_action(self, action: str | None) -> None:
+        if action == "ai_tryon":
+            self._pending_ai_tryon = True
+            return
+        super().handle_action(action)
+
+    def change_product(self, delta: int) -> None:
+        super().change_product(delta)
+        self.session_log.event("product_changed", product_id=self.product.id, product_name=self.product.name)
+
+    def _selected_size_id(self, selected_size: dict | None) -> int | None:
+        if not selected_size:
+            return None
+        value = selected_size.get("id")
+        try:
+            return int(value) if value else None
+        except (TypeError, ValueError):
+            return None
+
+    def _start_ai_tryon(self, frame, selected_size: dict | None, garment_rendered: bool, now: float) -> None:
+        if not self.ai_tryon.enabled:
+            return
+        if self.ai_tryon.active:
+            self.snapshot_message = "AI TRY-ON ALREADY RUNNING"
+            self.snapshot_message_until = now + 2.0
+            return
+        if not self.api:
+            self.snapshot_message = "PAIR MIRROR BEFORE AI TRY-ON"
+            self.snapshot_message_until = now + 2.0
+            return
+        if not garment_rendered:
+            self.snapshot_message = "SHOW REQUIRED BODY AREA FIRST"
+            self.snapshot_message_until = now + 2.5
+            return
+
+        try:
+            snapshot_path = save_ai_snapshot(frame, Path(self.args.data_dir) / "ai-tryon-inputs")
+            job = self.api.create_try_on_job(self.product, snapshot_path, self._selected_size_id(selected_size))
+            self.ai_tryon.status = str(job.get("status") or "queued")
+            self.ai_tryon.job_id = str(job.get("id") or "")
+            self.ai_tryon.result_url = str(job.get("result_url") or "")
+            self.ai_tryon.error = ""
+            self.ai_tryon.requested_at = now
+            self.ai_tryon.last_poll_at = 0.0
+            self.ai_tryon.qr_image = make_qr_image(self.ai_tryon.result_url)
+            self.snapshot_message = "AI TRY-ON QUEUED"
+            self.snapshot_message_until = now + 2.0
+            self.session_log.event(
+                "ai_tryon_created",
+                job_id=self.ai_tryon.job_id,
+                status=self.ai_tryon.status,
+                product_id=self.product.id,
+                product_name=self.product.name,
+            )
+        except Exception as exc:
+            self.ai_tryon.status = "failed"
+            self.ai_tryon.error = str(exc)
+            self.snapshot_message = "AI TRY-ON FAILED"
+            self.snapshot_message_until = now + 2.5
+            self.session_log.event("ai_tryon_error", error=str(exc), product_id=self.product.id)
+
+    def _poll_ai_tryon(self, now: float) -> None:
+        if not self.ai_tryon.enabled or not self.ai_tryon.active or not self.ai_tryon.job_id or not self.api:
+            return
+        if now - self.ai_tryon.last_poll_at < 2.5:
+            return
+        self.ai_tryon.last_poll_at = now
+        try:
+            job = self.api.try_on_job(self.ai_tryon.job_id)
+            old_status = self.ai_tryon.status
+            self.ai_tryon.status = str(job.get("status") or self.ai_tryon.status)
+            self.ai_tryon.result_url = str(job.get("result_url") or "")
+            self.ai_tryon.error = str(job.get("error") or "")
+            if self.ai_tryon.result_url and self.ai_tryon.qr_image is None:
+                self.ai_tryon.qr_image = make_qr_image(self.ai_tryon.result_url)
+            if self.ai_tryon.status != old_status:
+                self.session_log.event(
+                    "ai_tryon_status",
+                    job_id=self.ai_tryon.job_id,
+                    status=self.ai_tryon.status,
+                    error=self.ai_tryon.error,
+                )
+            if self.ai_tryon.status == "completed":
+                self.snapshot_message = "AI RESULT READY"
+                self.snapshot_message_until = now + 3.0
+            elif self.ai_tryon.status == "failed":
+                self.snapshot_message = "AI TRY-ON FAILED"
+                self.snapshot_message_until = now + 3.0
+        except Exception as exc:
+            self.session_log.event("ai_tryon_poll_error", job_id=self.ai_tryon.job_id, error=str(exc))
+
+    def _log_fps(self, now: float) -> None:
+        self._frame_count += 1
+        elapsed = now - self._fps_started_at
+        if elapsed >= 5.0:
+            self.session_log.event("runtime", fps=round(self._frame_count / elapsed, 2), product_id=self.product.id)
+            self._frame_count = 0
+            self._fps_started_at = now
 
     def _render_current_garment(self, frame, pose, selected_size: dict | None):
         garment_type = self._garment_type()
@@ -87,6 +193,7 @@ class SmartMirrorAppV2(SmartMirrorApp):
 
         width = int(camera.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(camera.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        self.session_log.event("camera_opened", camera=self.args.camera, backend=camera_backend, width=width, height=height)
         pose_tracker = PoseTracker(Path(self.args.model), width, height)
         hand_tracker = HandTracker() if self.args.gestures else None
         gesture_engine = (
@@ -113,7 +220,9 @@ class SmartMirrorAppV2(SmartMirrorApp):
                     frame = cv2.flip(frame, 1)
 
                 now = time.monotonic()
+                self._log_fps(now)
                 timestamp_ms = int(now * 1000)
+                self._poll_ai_tryon(now)
                 hands = hand_tracker.detect(frame, timestamp_ms) if hand_tracker else []
                 self.gesture_status = gesture_engine.update(hands, now) if gesture_engine else GestureStatus()
                 self.cursor_state = (
@@ -153,7 +262,7 @@ class SmartMirrorAppV2(SmartMirrorApp):
                     frame, garment_rendered = self._render_current_garment(frame, pose, selected_size)
                     lower_body_required = self._garment_type() in self.LOWER_GARMENT_TYPES and not garment_rendered
 
-                _selected_size, selected_label = self.selected_size()
+                selected_size, selected_label = self.selected_size()
                 confidence = fit_confidence(
                     pose.visibility if pose else 0.0,
                     self.recommendation,
@@ -166,6 +275,10 @@ class SmartMirrorAppV2(SmartMirrorApp):
                     else:
                         self.snapshot_message = "SHOW REQUIRED BODY AREA FIRST"
                         self.snapshot_message_until = now + 2.5
+
+                if self._pending_ai_tryon:
+                    self._pending_ai_tryon = False
+                    self._start_ai_tryon(frame.copy(), selected_size, garment_rendered, now)
 
                 if hand_tracker and self.args.gesture_debug:
                     hand_tracker.draw(frame)
@@ -202,6 +315,10 @@ class SmartMirrorAppV2(SmartMirrorApp):
                         cursor_y=self.cursor_state.y,
                         cursor_progress=self.cursor_state.progress,
                         cursor_hovered_action=self.cursor_state.hovered_action,
+                        ai_enabled=self.ai_tryon.enabled,
+                        ai_status=self.ai_tryon.status if self.ai_tryon.status != "idle" else "",
+                        ai_result_url=self.ai_tryon.result_url,
+                        ai_qr_image=self.ai_tryon.qr_image,
                     ),
                 )
 
@@ -234,6 +351,8 @@ class SmartMirrorAppV2(SmartMirrorApp):
                     else:
                         self.snapshot_message = "SHOW REQUIRED BODY AREA FIRST"
                         self.snapshot_message_until = now + 2.5
+                elif key in (ord("i"), ord("I")):
+                    self._start_ai_tryon(frame.copy(), selected_size, garment_rendered, now)
 
                 if self.api and now - last_heartbeat > 30:
                     try:

@@ -29,6 +29,8 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--mirror-view", action=argparse.BooleanOptionalAction, default=True)
     p.add_argument("--gestures", action=argparse.BooleanOptionalAction, default=True)
     p.add_argument("--gesture-debug", action=argparse.BooleanOptionalAction, default=False)
+    p.add_argument("--ai-tryon", action=argparse.BooleanOptionalAction, default=False)
+    p.add_argument("--session-log", action=argparse.BooleanOptionalAction, default=True)
     p.add_argument("--gesture-cooldown", type=float, default=1.10)
     p.add_argument("--gesture-hold", type=float, default=0.75)
     p.add_argument("--swipe-distance", type=float, default=0.20)

@@ -20,6 +20,7 @@ class DatabaseSchemaTest extends TestCase
             'sizing_charts',
             'orders',
             'order_items',
+            'try_on_jobs',
         ] as $table) {
             $this->assertTrue(Schema::hasTable($table), "Missing table: {$table}");
         }
@@ -65,6 +66,20 @@ class DatabaseSchemaTest extends TestCase
             'quantity',
             'unit_price',
             'line_total',
+        ]));
+    }
+
+    public function test_try_on_job_columns_exist(): void
+    {
+        $this->assertTrue(Schema::hasColumns('try_on_jobs', [
+            'tenant_id',
+            'mirror_id',
+            'product_id',
+            'status',
+            'provider',
+            'input_image_path',
+            'result_image_path',
+            'expires_at',
         ]));
     }
 }

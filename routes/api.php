@@ -5,10 +5,12 @@ use App\Http\Controllers\Api\Admin\DashboardController;
 use App\Http\Controllers\Api\Admin\MirrorController as AdminMirrorController;
 use App\Http\Controllers\Api\Admin\OrderController as AdminOrderController;
 use App\Http\Controllers\Api\Admin\ProductController;
+use App\Http\Controllers\Api\Admin\TryOnJobController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CheckoutController;
 use App\Http\Controllers\Api\MirrorAuthController;
 use App\Http\Controllers\Api\MirrorController;
+use App\Http\Controllers\Api\MirrorTryOnJobController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:10,1');
@@ -23,6 +25,10 @@ Route::middleware(['mirror.auth', 'throttle:240,1'])->group(function (): void {
     Route::get('/mirrors/{mirror}/catalog', [MirrorController::class, 'catalog']);
     Route::post('/mirror/checkout-sessions', [CheckoutController::class, 'createSession']);
     Route::post('/mirror/orders', [CheckoutController::class, 'directOrder']);
+    Route::middleware('throttle:10,1')->group(function (): void {
+        Route::post('/mirror/try-on-jobs', [MirrorTryOnJobController::class, 'store']);
+    });
+    Route::get('/mirror/try-on-jobs/{job}', [MirrorTryOnJobController::class, 'show']);
 });
 
 Route::middleware(['auth:sanctum', 'user.active'])->group(function (): void {
@@ -33,6 +39,7 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function (): void {
         Route::get('/dashboard', DashboardController::class);
         Route::apiResource('products', ProductController::class);
         Route::post('/products/{product}/reprocess', [ProductController::class, 'reprocess']);
+        Route::get('/try-on-jobs', [TryOnJobController::class, 'index']);
         Route::get('/orders', [AdminOrderController::class, 'index']);
         Route::get('/orders/{order}', [AdminOrderController::class, 'show']);
         Route::patch('/orders/{order}/status', [AdminOrderController::class, 'updateStatus']);

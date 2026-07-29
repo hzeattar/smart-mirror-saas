@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 import time
 from pathlib import Path
@@ -26,6 +27,7 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("--pose-model", default=str(base / "models" / "pose_landmarker_lite.task"))
     command.add_argument("--hand-model", default=str(base / "models" / "hand_landmarker.task"))
     command.add_argument("--preview", action=argparse.BooleanOptionalAction, default=True)
+    command.add_argument("--report-path", help="Optional JSON file path for machine-readable diagnostics.")
     return command
 
 
@@ -35,7 +37,23 @@ def check(condition: bool, success: str, failure: str) -> None:
     print(f"[PASS] {success}")
 
 
+def write_report(path: str | None, payload: dict) -> None:
+    if not path:
+        return
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    print(f"[PASS] Diagnostic report written: {target}")
+
+
 def run(args: argparse.Namespace) -> int:
+    report = {
+        "python": sys.version.split()[0],
+        "opencv": cv2.__version__,
+        "mediapipe": getattr(mp, "__version__", "unknown"),
+        "camera": {"index": args.camera, "backend": args.camera_backend},
+        "checks": [],
+    }
     print("Smart Mirror Phase 1 diagnostics")
     print(f"Python: {sys.version.split()[0]}")
     print(f"OpenCV: {cv2.__version__}")
@@ -57,10 +75,21 @@ def run(args: argparse.Namespace) -> int:
         cameras = scan_cameras(args.scan_max_camera, args.width, args.height, args.camera_backend)
         check(bool(cameras), "At least one camera opened", "No cameras opened")
         for camera in cameras:
+            report["checks"].append(
+                {
+                    "name": "camera_scan",
+                    "status": "pass",
+                    "index": camera.index,
+                    "backend": camera.backend,
+                    "width": camera.width,
+                    "height": camera.height,
+                }
+            )
             print(
                 f"[PASS] camera={camera.index} backend={camera.backend} "
                 f"resolution={camera.width}x{camera.height}"
             )
+        write_report(args.report_path, report)
         return 0
 
     pose_model = Path(args.pose_model)
@@ -70,6 +99,8 @@ def run(args: argparse.Namespace) -> int:
 
     camera, camera_backend = open_camera(args.camera, args.width, args.height, args.camera_backend)
     check(True, f"Camera {args.camera} opened with {camera_backend}", f"Cannot open camera index {args.camera}")
+    report["camera"]["backend"] = camera_backend
+    report["checks"].append({"name": "camera_open", "status": "pass"})
 
     width = int(camera.get(cv2.CAP_PROP_FRAME_WIDTH)) or args.width
     height = int(camera.get(cv2.CAP_PROP_FRAME_HEIGHT)) or args.height
@@ -147,6 +178,16 @@ def run(args: argparse.Namespace) -> int:
         print("[WARN] No hand detected. Show an open palm in front of the camera with good lighting.")
 
     print("[PASS] Runtime completed without MediaPipe API errors")
+    report.update(
+        {
+            "read_frames": read_frames,
+            "pose_frames": pose_frames,
+            "estimated_hip_frames": estimated_hip_frames,
+            "hand_frames": hand_frames,
+        }
+    )
+    report["checks"].append({"name": "runtime", "status": "pass"})
+    write_report(args.report_path, report)
     return 0
 
 

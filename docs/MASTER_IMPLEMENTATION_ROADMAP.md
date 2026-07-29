@@ -112,11 +112,11 @@ This foundation is not the final virtual try-on experience. The old 2D garment w
 ## Remaining phases
 
 ### Phase 2 — AI HD Virtual Try-On
-- Add a dedicated Python GPU service.
-- Integrate a commercially usable VTON provider/model, initially FASHN VTON/API or an approved equivalent.
-- Preserve face, hair, background and garment identity.
-- Generate and save a photorealistic HD result while the camera remains open.
-- Add job state, retries, generated media and QR delivery.
+- Implemented foundation: async try-on job records, mirror create/poll endpoints, admin job list, mock provider, guarded NVIDIA provider, result media storage, QR result display, CV client AI trigger and session JSONL logs.
+- Remaining provider work: select and validate a commercially usable VTON model/provider, configure fresh provider credentials, and verify photorealistic output quality.
+- Preserve face, hair, background and garment identity in the selected provider acceptance tests.
+- Keep the current 2D overlay as live fallback while AI jobs run asynchronously.
+- Add production object storage before real customer media is retained beyond demos.
 
 ### Phase 3 — Near-live AI Video Try-On
 - Benchmark CatV2TON and commercially permitted alternatives.

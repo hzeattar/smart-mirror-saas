@@ -27,6 +27,7 @@ async function signOut() {
         <router-link to="/"><span>◫</span> Overview</router-link>
         <router-link to="/products"><span>◩</span> Products</router-link>
         <router-link to="/orders"><span>◎</span> Live orders</router-link>
+        <router-link to="/try-on-jobs"><span>AI</span> Try-on jobs</router-link>
         <router-link to="/mirrors"><span>◇</span> Mirrors</router-link>
       </nav>
       <div class="sidebar-footer">

@@ -68,6 +68,11 @@ class Product extends Model
         return $this->hasMany(OrderItem::class);
     }
 
+    public function tryOnJobs(): HasMany
+    {
+        return $this->hasMany(TryOnJob::class);
+    }
+
     public function scopeForTenant(Builder $query, int $tenantId): Builder
     {
         return $query->where('tenant_id', $tenantId);

@@ -30,6 +30,10 @@ class SmartUiModel:
     cursor_y: float = 0.5
     cursor_progress: float = 0.0
     cursor_hovered_action: str = ""
+    ai_enabled: bool = False
+    ai_status: str = ""
+    ai_result_url: str = ""
+    ai_qr_image: np.ndarray | None = None
 
 
 def clicked_action(hitboxes: dict[str, Rect], x: int, y: int) -> str | None:
@@ -118,6 +122,25 @@ def draw_smart_ui(frame: np.ndarray, model: SmartUiModel) -> dict[str, Rect]:
         button(frame, hitboxes["size_down"], "-", hover=model.cursor_hovered_action == "size_down")
         button(frame, hitboxes["size_up"], "+", hover=model.cursor_hovered_action == "size_up")
         button(frame, hitboxes["auto_size"], "AUTO", active=model.auto_size, hover=model.cursor_hovered_action == "auto_size")
+        if model.ai_enabled:
+            hitboxes["ai_tryon"] = (left + 18, top + 72, left + 118, bottom - 12)
+            button(frame, hitboxes["ai_tryon"], "AI", active=model.ai_status in {"queued", "processing", "completed"}, hover=model.cursor_hovered_action == "ai_tryon")
+
+    if model.ai_enabled and model.ai_status:
+        ai_right = width - 20
+        ai_left = max(20, ai_right - 260)
+        ai_bottom = min(height - 138, 292 if model.ai_qr_image is not None else 122)
+        panel(frame, (ai_left, 88, ai_right, ai_bottom), 0.84)
+        label = f"AI {model.ai_status.upper()}"
+        cv2.putText(frame, label[:24], (ai_left + 14, 116), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (88, 224, 181), 2, cv2.LINE_AA)
+        if model.ai_result_url:
+            cv2.putText(frame, "SCAN RESULT", (ai_left + 14, 142), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (235, 241, 248), 1, cv2.LINE_AA)
+        if model.ai_qr_image is not None:
+            qr = model.ai_qr_image
+            qr_h, qr_w = qr.shape[:2]
+            top_qr = 152
+            left_qr = ai_left + (ai_right - ai_left - qr_w) // 2
+            frame[top_qr : top_qr + qr_h, left_qr : left_qr + qr_w] = qr
 
     if model.snapshot_message:
         size = cv2.getTextSize(model.snapshot_message, cv2.FONT_HERSHEY_SIMPLEX, 0.58, 2)[0]

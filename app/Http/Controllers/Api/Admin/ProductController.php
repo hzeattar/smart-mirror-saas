@@ -151,7 +151,7 @@ class ProductController extends Controller
             'sku' => ['nullable', 'string', 'max:100'],
             'category_id' => ['nullable', 'integer'],
             'description' => ['nullable', 'string', 'max:3000'],
-            'garment_type' => [$partial ? 'sometimes' : 'required', Rule::in(['top', 'tshirt', 'polo', 'hoodie', 'jacket', 'dress'])],
+            'garment_type' => [$partial ? 'sometimes' : 'required', Rule::in(['top', 'tshirt', 'polo', 'hoodie', 'jacket', 'dress', 'trousers', 'pants', 'jeans', 'suit'])],
             'unit_price' => [$prefix, 'numeric', 'min:0', 'max:9999999999'],
             'currency' => ['nullable', 'string', 'size:3'],
             'status' => ['nullable', Rule::enum(ProductStatus::class)],

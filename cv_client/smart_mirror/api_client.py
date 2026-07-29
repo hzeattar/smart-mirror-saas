@@ -89,6 +89,25 @@ class SmartMirrorApi:
     def heartbeat(self) -> None:
         self.session.post(f"{self.base_url}/api/mirror/heartbeat", timeout=8).raise_for_status()
 
+    def create_try_on_job(self, product: CatalogProduct, snapshot_path: Path, sizing_chart_id: int | None = None) -> dict:
+        data = {"product_id": str(product.id)}
+        if sizing_chart_id:
+            data["sizing_chart_id"] = str(sizing_chart_id)
+        with snapshot_path.open("rb") as handle:
+            response = self.session.post(
+                f"{self.base_url}/api/mirror/try-on-jobs",
+                data=data,
+                files={"snapshot": (snapshot_path.name, handle, "image/jpeg")},
+                timeout=30,
+            )
+        response.raise_for_status()
+        return response.json()["job"]
+
+    def try_on_job(self, job_id: str) -> dict:
+        response = self.session.get(f"{self.base_url}/api/mirror/try-on-jobs/{job_id}", timeout=12)
+        response.raise_for_status()
+        return response.json()["job"]
+
     def _cache_path(self, product: CatalogProduct, url: str) -> Path:
         identity = f"{product.id}:{product.sku or ''}:{url}".encode("utf-8")
         digest = hashlib.sha256(identity).hexdigest()[:20]

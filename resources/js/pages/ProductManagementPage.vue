@@ -180,6 +180,13 @@ async function reprocess(product) {
   await api.post(`/admin/products/${product.id}/reprocess`)
   await load()
 }
+
+function readiness(product) {
+  if (!product.texture_image_url && !product.base_image_url) return 'needs_image'
+  if (product.background_removal_status === 'failed') return 'failed'
+  if (!product.texture_image_url) return 'preparing'
+  return 'ready'
+}
 </script>
 
 <template>
@@ -213,6 +220,8 @@ async function reprocess(product) {
             <option value="hoodie">Hoodie</option>
             <option value="jacket">Jacket</option>
             <option value="dress">Dress</option>
+            <option value="trousers">Trousers</option>
+            <option value="suit">Suit</option>
             <option value="top">Other top</option>
           </select>
         </label>
@@ -295,6 +304,10 @@ async function reprocess(product) {
           <strong>{{ Number(product.unit_price).toLocaleString('ar-EG') }} {{ product.currency }}</strong>
         </div>
         <StatusPill :value="product.background_removal_status" />
+        <div class="product-meta">
+          <span>AI readiness</span>
+          <StatusPill :value="readiness(product)" />
+        </div>
         <div class="card-actions">
           <button class="text-btn" @click="edit(product)">Edit</button>
           <button v-if="product.base_image_path" class="text-btn" @click="reprocess(product)">Reprocess</button>
