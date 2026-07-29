@@ -27,7 +27,11 @@ class MirrorController extends Controller
     {
         /** @var Mirror $authenticated */
         $authenticated = $request->attributes->get('mirror');
-        abort_if($mirror && $mirror->id !== $authenticated->id, 403, 'Mirror cannot access another device catalog.');
+        abort_if(
+            $mirror && $mirror->id !== $authenticated->id,
+            403,
+            'Mirror cannot access another device catalog.'
+        );
 
         $products = Product::query()
             ->forTenant($authenticated->tenant_id)
@@ -42,6 +46,9 @@ class MirrorController extends Controller
                 'description' => $product->description,
                 'price' => (float) $product->unit_price,
                 'currency' => $product->currency,
+                'garment_type' => $product->garment_type ?? 'top',
+                'fit_profile' => $product->fit_profile ?? [],
+                'texture_anchor' => $product->texture_anchor ?? [],
                 'base_image_url' => $this->absoluteAssetUrl($request, $product->base_image_url),
                 'texture_image_url' => $this->absoluteAssetUrl($request, $product->texture_image_url),
                 'category' => $product->category,
@@ -50,13 +57,23 @@ class MirrorController extends Controller
                     'label' => $size->size_label,
                     'shoulder_width_cm' => (float) $size->shoulder_width_cm,
                     'chest_width_cm' => (float) $size->chest_width_cm,
+                    'waist_width_cm' => $size->waist_width_cm !== null ? (float) $size->waist_width_cm : null,
+                    'hip_width_cm' => $size->hip_width_cm !== null ? (float) $size->hip_width_cm : null,
+                    'sleeve_length_cm' => $size->sleeve_length_cm !== null ? (float) $size->sleeve_length_cm : null,
+                    'fit_ease_cm' => (float) ($size->fit_ease_cm ?? 4),
                     'height_cm' => (float) $size->height_cm,
                 ]),
             ]);
 
         return response()->json([
-            'mirror' => ['id' => $authenticated->id, 'location_name' => $authenticated->location_name],
-            'tenant' => ['id' => $authenticated->tenant->id, 'name' => $authenticated->tenant->name],
+            'mirror' => [
+                'id' => $authenticated->id,
+                'location_name' => $authenticated->location_name,
+            ],
+            'tenant' => [
+                'id' => $authenticated->tenant->id,
+                'name' => $authenticated->tenant->name,
+            ],
             'products' => $products,
             'generated_at' => now()->toIso8601String(),
         ]);
