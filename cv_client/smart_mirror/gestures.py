@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import deque
 from dataclasses import dataclass
 
-from .hand_tracker import HandObservation
+from .hand_types import HandObservation
 
 
 @dataclass(frozen=True)
@@ -88,8 +88,6 @@ class GestureEngine:
             return None
 
         confidence = min(1.0, abs(dx) / max(self.swipe_distance * 1.75, 1e-6))
-        # Coordinates already match the mirrored display. Swipe left advances the
-        # catalogue; swipe right goes back, matching common carousel behaviour.
         if dx < 0:
             return self._trigger("next", "NEXT GARMENT", confidence, now)
         return self._trigger("previous", "PREVIOUS GARMENT", confidence, now)
@@ -124,8 +122,4 @@ class GestureEngine:
         if progress >= 1.0 and self._ready(now):
             return self._trigger(action, label, hand.gesture_confidence, now)
 
-        return GestureStatus(
-            active_label=label,
-            progress=progress,
-            last_action=self._last_action,
-        )
+        return GestureStatus(active_label=label, progress=progress, last_action=self._last_action)
