@@ -19,12 +19,13 @@ class CategoryController extends Controller
 
     public function store(Request $request): JsonResponse
     {
-        $data = $request->validate(['name' => ['required','string','max:120'], 'status' => ['nullable', Rule::enum(CategoryStatus::class)]]);
+        $data = $request->validate(['name' => ['required', 'string', 'max:120'], 'status' => ['nullable', Rule::enum(CategoryStatus::class)]]);
         $category = Category::query()->create([
             ...$data,
             'tenant_id' => $request->user()->tenant_id,
             'slug' => Str::slug($data['name']).'-'.Str::lower(Str::random(4)),
         ]);
+
         return response()->json(['category' => $category], 201);
     }
 }

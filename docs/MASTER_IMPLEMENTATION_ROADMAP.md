@@ -66,11 +66,18 @@ This foundation is not the final virtual try-on experience. The old 2D garment w
   - zigzag rejection;
   - garment alpha bounds;
   - centring and metadata generation.
+- Added category-aware temporary fallback rendering:
+  - tops anchored to shoulders and torso;
+  - trousers anchored to real hips, knees and ankles;
+  - lower-body rendering disabled for cropped upper-body poses.
+- Hardened automated validation by forcing PHPUnit to use sqlite in-memory test settings even when a host-level `DATABASE_URL` is present.
 
 #### Verification completed
-- GestureEngine unit tests: 7 passed.
-- HandCursor dwell and cooldown checks: passed.
-- Python syntax compilation for V2 runtime, smart UI, gesture, API-client and asset-processing modules: passed.
+- 2026-07-29 local Windows: full CV unittest discovery: 26 tests passed.
+- 2026-07-29 local Windows: tracked CV Python source compilation: passed.
+- 2026-07-29 local Windows: Laravel feature tests: 6 tests / 38 assertions passed.
+- 2026-07-29 local Windows: `npm run build`: passed.
+- 2026-07-29 local Windows: `vendor/bin/pint --test`: passed.
 - `PhotographicGarmentCatalogSeeder.php`: PHP syntax passed.
 - `DatabaseSeeder.php`: PHP syntax passed.
 
@@ -85,10 +92,7 @@ This foundation is not the final virtual try-on experience. The old 2D garment w
 - Verify that all five external photographic files download successfully from the target Windows/network environment.
 - Verify first-run rembg preparation and subsequent cache reuse.
 - Add backend/admin display of source licence and prepared-asset quality metadata.
-- Add category-aware temporary fallback rendering:
-  - tops anchored to shoulders and torso;
-  - trousers anchored to hips and legs;
-  - suit separated into jacket/trouser components when applicable.
+- Split suits into jacket/trouser components when suitable assets are available.
 - Do not represent the temporary 2D fallback as photorealistic try-on. Photorealistic wearing begins in Phase 2.
 - Review the complete branch diff against `main`.
 - Merge only after local Windows acceptance.

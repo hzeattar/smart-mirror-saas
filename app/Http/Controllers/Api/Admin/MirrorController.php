@@ -19,7 +19,7 @@ class MirrorController extends Controller
 
     public function store(Request $request): JsonResponse
     {
-        $data = $request->validate(['location_name' => ['required','string','max:150']]);
+        $data = $request->validate(['location_name' => ['required', 'string', 'max:150']]);
         $mirror = Mirror::query()->create([
             'tenant_id' => $request->user()->tenant_id,
             'public_id' => (string) Str::uuid(),
@@ -27,6 +27,7 @@ class MirrorController extends Controller
             'location_name' => $data['location_name'],
             'status' => MirrorStatus::Pending,
         ]);
+
         return response()->json(['mirror' => $mirror->makeVisible('pairing_code')], 201);
     }
 
@@ -39,6 +40,7 @@ class MirrorController extends Controller
             'status' => MirrorStatus::Pending,
             'paired_at' => null,
         ]);
+
         return response()->json(['mirror' => $mirror->fresh()->makeVisible('pairing_code')]);
     }
 
@@ -46,16 +48,20 @@ class MirrorController extends Controller
     {
         $this->authorizeTenant($request, $mirror);
         $data = $request->validate([
-            'location_name' => ['sometimes','string','max:150'],
+            'location_name' => ['sometimes', 'string', 'max:150'],
             'status' => ['sometimes', Rule::enum(MirrorStatus::class)],
         ]);
         $mirror->update($data);
+
         return response()->json(['mirror' => $mirror->fresh()]);
     }
 
     private function uniqueCode(): string
     {
-        do { $code = strtoupper(Str::random(8)); } while (Mirror::query()->where('pairing_code', $code)->exists());
+        do {
+            $code = strtoupper(Str::random(8));
+        } while (Mirror::query()->where('pairing_code', $code)->exists());
+
         return $code;
     }
 

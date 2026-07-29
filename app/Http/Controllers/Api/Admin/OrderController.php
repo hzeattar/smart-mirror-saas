@@ -14,19 +14,23 @@ class OrderController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
-        $query = Order::query()->forTenant($request->user()->tenant_id)->with(['items','mirror'])->latest();
-        if ($request->filled('status')) $query->where('status', $request->string('status'));
+        $query = Order::query()->forTenant($request->user()->tenant_id)->with(['items', 'mirror'])->latest();
+        if ($request->filled('status')) {
+            $query->where('status', $request->string('status'));
+        }
         if ($request->filled('search')) {
             $term = '%'.$request->string('search').'%';
-            $query->where(fn ($q) => $q->where('order_number','like',$term)->orWhere('customer_name','like',$term)->orWhere('customer_phone','like',$term));
+            $query->where(fn ($q) => $q->where('order_number', 'like', $term)->orWhere('customer_name', 'like', $term)->orWhere('customer_phone', 'like', $term));
         }
+
         return response()->json($query->paginate(30));
     }
 
     public function show(Request $request, Order $order): JsonResponse
     {
         $this->authorizeTenant($request, $order);
-        return response()->json(['order' => $order->load(['items','mirror'])]);
+
+        return response()->json(['order' => $order->load(['items', 'mirror'])]);
     }
 
     public function updateStatus(Request $request, Order $order): JsonResponse
@@ -35,7 +39,8 @@ class OrderController extends Controller
         $data = $request->validate(['status' => ['required', Rule::enum(OrderStatus::class)]]);
         $order->update(['status' => $data['status']]);
         event(new OrderStatusUpdated($order));
-        return response()->json(['order' => $order->fresh()->load(['items','mirror'])]);
+
+        return response()->json(['order' => $order->fresh()->load(['items', 'mirror'])]);
     }
 
     private function authorizeTenant(Request $request, Order $order): void

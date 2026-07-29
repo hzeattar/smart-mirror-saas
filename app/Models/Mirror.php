@@ -18,6 +18,7 @@ class Mirror extends Model
         'public_id', 'tenant_id', 'pairing_code', 'api_token_hash', 'location_name',
         'device_name', 'status', 'paired_at', 'last_seen_at', 'app_version', 'metadata',
     ];
+
     protected $hidden = ['pairing_code', 'api_token_hash'];
 
     protected function casts(): array
@@ -30,8 +31,23 @@ class Mirror extends Model
         ];
     }
 
-    public function tenant(): BelongsTo { return $this->belongsTo(Tenant::class); }
-    public function orders(): HasMany { return $this->hasMany(Order::class); }
-    public function checkoutSessions(): HasMany { return $this->hasMany(CheckoutSession::class); }
-    public function scopeForTenant(Builder $query, int $tenantId): Builder { return $query->where('tenant_id', $tenantId); }
+    public function tenant(): BelongsTo
+    {
+        return $this->belongsTo(Tenant::class);
+    }
+
+    public function orders(): HasMany
+    {
+        return $this->hasMany(Order::class);
+    }
+
+    public function checkoutSessions(): HasMany
+    {
+        return $this->hasMany(CheckoutSession::class);
+    }
+
+    public function scopeForTenant(Builder $query, int $tenantId): Builder
+    {
+        return $query->where('tenant_id', $tenantId);
+    }
 }

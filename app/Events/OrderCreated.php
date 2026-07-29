@@ -20,7 +20,10 @@ class OrderCreated implements ShouldBroadcastNow
         return [new PrivateChannel('tenant.'.$this->order->tenant_id.'.orders')];
     }
 
-    public function broadcastAs(): string { return 'order.created'; }
+    public function broadcastAs(): string
+    {
+        return 'order.created';
+    }
 
     public function broadcastWith(): array
     {

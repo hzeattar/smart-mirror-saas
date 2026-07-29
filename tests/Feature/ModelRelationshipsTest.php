@@ -17,13 +17,13 @@ class ModelRelationshipsTest extends TestCase
 {
     public function test_expected_relationship_types_are_declared(): void
     {
-        $tenant = new Tenant();
-        $mirror = new Mirror();
-        $category = new Category();
-        $product = new Product();
-        $size = new SizingChart();
-        $order = new Order();
-        $item = new OrderItem();
+        $tenant = new Tenant;
+        $mirror = new Mirror;
+        $category = new Category;
+        $product = new Product;
+        $size = new SizingChart;
+        $order = new Order;
+        $item = new OrderItem;
 
         $this->assertInstanceOf(HasMany::class, $tenant->mirrors());
         $this->assertInstanceOf(HasMany::class, $tenant->categories());

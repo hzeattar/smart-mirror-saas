@@ -14,7 +14,19 @@ class OrderStatusUpdated implements ShouldBroadcastNow
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
     public function __construct(public Order $order) {}
-    public function broadcastOn(): array { return [new PrivateChannel('tenant.'.$this->order->tenant_id.'.orders')]; }
-    public function broadcastAs(): string { return 'order.updated'; }
-    public function broadcastWith(): array { return ['order' => ['id' => $this->order->public_id, 'status' => $this->order->status->value]]; }
+
+    public function broadcastOn(): array
+    {
+        return [new PrivateChannel('tenant.'.$this->order->tenant_id.'.orders')];
+    }
+
+    public function broadcastAs(): string
+    {
+        return 'order.updated';
+    }
+
+    public function broadcastWith(): array
+    {
+        return ['order' => ['id' => $this->order->public_id, 'status' => $this->order->status->value]];
+    }
 }

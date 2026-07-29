@@ -16,6 +16,7 @@ class DashboardController extends Controller
     public function __invoke(Request $request): JsonResponse
     {
         $tenantId = $request->user()->tenant_id;
+
         return response()->json(['stats' => [
             'products' => Product::query()->forTenant($tenantId)->count(),
             'orders_today' => Order::query()->forTenant($tenantId)->whereDate('created_at', today())->count(),

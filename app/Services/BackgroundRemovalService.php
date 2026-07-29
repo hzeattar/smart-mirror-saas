@@ -24,6 +24,7 @@ class BackgroundRemovalService
                 throw new RuntimeException('Background removal API failed: '.$response->status());
             }
             $disk->put($outputPath, $response->body());
+
             return;
         }
 

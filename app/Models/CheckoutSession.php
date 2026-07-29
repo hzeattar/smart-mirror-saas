@@ -30,7 +30,18 @@ class CheckoutSession extends Model
         ];
     }
 
-    public function tenant(): BelongsTo { return $this->belongsTo(Tenant::class); }
-    public function mirror(): BelongsTo { return $this->belongsTo(Mirror::class); }
-    public function order(): BelongsTo { return $this->belongsTo(Order::class); }
+    public function tenant(): BelongsTo
+    {
+        return $this->belongsTo(Tenant::class);
+    }
+
+    public function mirror(): BelongsTo
+    {
+        return $this->belongsTo(Mirror::class);
+    }
+
+    public function order(): BelongsTo
+    {
+        return $this->belongsTo(Order::class);
+    }
 }
