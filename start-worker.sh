@@ -17,4 +17,28 @@ php artisan optimize:clear || true
 php artisan config:cache
 
 log "Starting queue worker: connection=${QUEUE_CONNECTION}, queue=${QUEUE_NAME:-default}"
-exec php artisan queue:work "${QUEUE_CONNECTION}" --queue="${QUEUE_NAME:-default}" --sleep=2 --tries=2 --timeout="${AI_TRYON_TIMEOUT_SECONDS:-120}"
+
+cat >/tmp/worker-health.php <<'PHP'
+<?php
+if ($_SERVER['REQUEST_URI'] === '/up') {
+    http_response_code(200);
+    header('Content-Type: text/plain');
+    echo 'OK';
+    return;
+}
+
+http_response_code(404);
+echo 'Not Found';
+PHP
+
+php -S "0.0.0.0:${PORT:-8080}" /tmp/worker-health.php >/tmp/worker-health.log 2>&1 &
+health_pid=$!
+
+php artisan queue:work "${QUEUE_CONNECTION}" --queue="${QUEUE_NAME:-default}" --sleep=2 --tries=2 --timeout="${AI_TRYON_TIMEOUT_SECONDS:-120}" &
+worker_pid=$!
+
+trap 'kill "$health_pid" "$worker_pid" 2>/dev/null || true' EXIT
+wait -n "$health_pid" "$worker_pid"
+exit_code=$?
+kill "$health_pid" "$worker_pid" 2>/dev/null || true
+exit "$exit_code"
