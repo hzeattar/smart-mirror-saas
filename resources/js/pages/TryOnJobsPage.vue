@@ -8,13 +8,18 @@ const jobs = ref([])
 const batches = ref([])
 const loading = ref(false)
 const error = ref('')
+const filters = ref({ status: '', provider: '', mirror_id: '', date_from: '', date_to: '' })
+
+function params() {
+  return Object.fromEntries(Object.entries(filters.value).filter(([, value]) => value !== ''))
+}
 
 async function load() {
   loading.value = true
   try {
     const [batchResponse, jobResponse] = await Promise.all([
-      api.get('/admin/try-on-batches'),
-      api.get('/admin/try-on-jobs'),
+      api.get('/admin/try-on-batches', { params: params() }),
+      api.get('/admin/try-on-jobs', { params: params() }),
     ])
     batches.value = batchResponse.data.data
     jobs.value = jobResponse.data.data
@@ -34,6 +39,14 @@ onMounted(() => {
 <template>
   <PageHeader eyebrow="AI" title="Try-on jobs" description="Generated fitting-room results from smart mirrors." />
   <p v-if="error" class="form-error">{{ error }}</p>
+  <section class="filter-panel">
+    <select v-model="filters.status" @change="load"><option value="">All statuses</option><option value="queued">Queued</option><option value="processing">Processing</option><option value="completed">Completed</option><option value="failed">Failed</option></select>
+    <select v-model="filters.provider" @change="load"><option value="">All providers</option><option value="mock">Mock</option><option value="nvidia">NVIDIA</option></select>
+    <input v-model="filters.mirror_id" type="number" placeholder="Mirror ID" @change="load">
+    <input v-model="filters.date_from" type="date" @change="load">
+    <input v-model="filters.date_to" type="date" @change="load">
+    <button class="btn btn-secondary" @click="load">Refresh</button>
+  </section>
   <section class="table-panel">
     <div class="section-heading">
       <div>
@@ -47,7 +60,7 @@ onMounted(() => {
         <tr v-for="batch in batches" :key="batch.id">
           <td><StatusPill :value="batch.status" /></td>
           <td>{{ batch.mirror?.location_name || 'Unknown mirror' }}<small>{{ batch.mirror?.device_name || '' }}</small></td>
-          <td>{{ batch.completed_count }}/{{ batch.outfit_count }} ready<small v-if="batch.failed_count" class="danger-text">{{ batch.failed_count }} failed</small></td>
+          <td>{{ batch.completed_count }}/{{ batch.outfit_count }} ready<small v-if="batch.processing_seconds">{{ batch.processing_seconds }}s processing</small><small v-if="batch.failed_count" class="danger-text">{{ batch.failed_count }} failed</small></td>
           <td>
             <div v-for="job in batch.jobs" :key="job.id" class="stacked-line">
               <span>{{ job.product?.name || 'Deleted product' }}</span>
@@ -78,6 +91,7 @@ onMounted(() => {
           <td>
             {{ new Date(job.created_at).toLocaleString() }}
             <small v-if="job.completed_at">Completed {{ new Date(job.completed_at).toLocaleTimeString() }}</small>
+            <small v-if="job.processing_seconds">{{ job.processing_seconds }}s processing</small>
             <small v-if="job.failed_at" class="danger-text">{{ job.error || 'Failed' }}</small>
           </td>
           <td><a v-if="job.result_url" class="text-link" :href="job.result_url" target="_blank">Open result</a><span v-else class="muted">Waiting</span></td>

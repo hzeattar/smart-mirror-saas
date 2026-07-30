@@ -11,7 +11,16 @@ from .camera import open_camera
 from .fitting import estimate_body_measurements, fit_confidence, recommend_size
 from .gestures import GestureEngine, GestureStatus
 from .hand_tracker import HandTracker
-from .hybrid import BurstFrame, HybridState, best_burst_frame, draw_attractor, draw_hybrid_hud, frame_score, save_hybrid_snapshot
+from .hybrid import (
+    BurstFrame,
+    HybridState,
+    best_burst_frame,
+    draw_attractor,
+    draw_hybrid_hud,
+    draw_kiosk_health,
+    frame_score,
+    save_hybrid_snapshot,
+)
 from .interaction import CursorState, HandCursor
 from .lower_overlay import lower_body_ready, overlay_trousers
 from .overlay import overlay_garment
@@ -34,6 +43,8 @@ class SmartMirrorAppV2(SmartMirrorApp):
         self.session_log = SessionLogger(args.data_dir, bool(getattr(args, "session_log", True)))
         self._frame_count = 0
         self._fps_started_at = time.monotonic()
+        self._current_fps = 0.0
+        self._last_session_upload_at = 0.0
         self._pending_ai_tryon = False
 
     def _neighbour_name(self, delta: int) -> str:
@@ -144,7 +155,7 @@ class SmartMirrorAppV2(SmartMirrorApp):
             return []
         return [self.products[(self.product_index + offset) % len(self.products)] for offset in range(min(count, len(self.products)))]
 
-    def _start_hybrid_capture(self, pose, now: float) -> None:
+    def _begin_hybrid_countdown(self, pose, now: float, source: str = "manual") -> None:
         if not self.hybrid:
             return
         if self.hybrid.active:
@@ -160,11 +171,24 @@ class SmartMirrorAppV2(SmartMirrorApp):
             self.snapshot_message = "STAND CENTER AND RAISE HAND"
             self.snapshot_message_until = now + 2.0
             return
+        self.hybrid.mode = "countdown"
+        self.hybrid.message = "GET READY"
+        self.hybrid.burst.clear()
+        self.hybrid.countdown_started_at = now
+        self.hybrid.qr_visible = False
+        self.session_log.event("hybrid_countdown_started", source=source, product_id=self.product.id, product_name=self.product.name)
+
+    def _start_hybrid_capture(self, pose, now: float) -> None:
+        if not self.hybrid:
+            return
+        if pose is None:
+            self.hybrid.mode = "align_user"
+            self.hybrid.message = "STAND CENTER"
+            return
         self.hybrid.mode = "capture_burst"
         self.hybrid.message = "HOLD STILL"
         self.hybrid.burst.clear()
         self.hybrid.capture_started_at = now
-        self.hybrid.qr_visible = False
         self.session_log.event("hybrid_capture_started", product_id=self.product.id, product_name=self.product.name)
 
     def _submit_hybrid_batch(self, selected_size: dict | None, now: float) -> None:
@@ -252,7 +276,7 @@ class SmartMirrorAppV2(SmartMirrorApp):
         if not self.hybrid or not action:
             return False
         if action == "start_capture":
-            self._start_hybrid_capture(pose, now)
+            self._begin_hybrid_countdown(pose, now, "gesture")
             return True
         if action == "next" and self.hybrid.mode == "gallery":
             ready = self.hybrid.ready_jobs
@@ -287,9 +311,23 @@ class SmartMirrorAppV2(SmartMirrorApp):
         self._frame_count += 1
         elapsed = now - self._fps_started_at
         if elapsed >= 5.0:
-            self.session_log.event("runtime", fps=round(self._frame_count / elapsed, 2), product_id=self.product.id)
+            self._current_fps = round(self._frame_count / elapsed, 2)
+            self.session_log.event("runtime", fps=self._current_fps, product_id=self.product.id)
             self._frame_count = 0
             self._fps_started_at = now
+
+    def _flush_session_events(self, now: float) -> None:
+        if not self.api or now - self._last_session_upload_at < 10.0:
+            return
+        rows = self.session_log.drain_remote(30)
+        if not rows:
+            return
+        try:
+            self.api.session_events(rows)
+            self._last_session_upload_at = now
+        except Exception as exc:
+            self.session_log.restore_remote(rows[-60:])
+            print(f"Session telemetry warning: {exc}")
 
     def _render_current_garment(self, frame, pose, selected_size: dict | None):
         garment_type = self._garment_type()
@@ -370,6 +408,7 @@ class SmartMirrorAppV2(SmartMirrorApp):
 
                 now = time.monotonic()
                 self._log_fps(now)
+                self._flush_session_events(now)
                 timestamp_ms = int(now * 1000)
                 self._poll_ai_tryon(now)
                 self._poll_hybrid_batch(now)
@@ -418,6 +457,18 @@ class SmartMirrorAppV2(SmartMirrorApp):
                 selected_size, selected_label = self.selected_size()
                 if self.gesture_status.event and self.hybrid:
                     self._handle_hybrid_action(self.gesture_status.event.action, pose, now)
+
+                if self.hybrid:
+                    if pose and self.hybrid.mode in {"idle_attractor", "align_user"}:
+                        if self.hybrid.presence_started_at <= 0:
+                            self.hybrid.presence_started_at = now
+                        elif bool(getattr(self.args, "hybrid_auto_start", True)) and now - self.hybrid.presence_started_at >= 1.5:
+                            self._begin_hybrid_countdown(pose, now, "auto")
+                    elif not pose and self.hybrid.mode in {"idle_attractor", "align_user"}:
+                        self.hybrid.presence_started_at = 0.0
+
+                    if self.hybrid.mode == "countdown" and now - self.hybrid.countdown_started_at >= 1.2:
+                        self._start_hybrid_capture(pose, now)
 
                 if self.hybrid and self.hybrid.mode == "capture_burst":
                     elapsed = now - self.hybrid.capture_started_at
@@ -490,6 +541,8 @@ class SmartMirrorAppV2(SmartMirrorApp):
 
                 if self.hybrid:
                     draw_hybrid_hud(frame, self.hybrid, gesture_label, gesture_progress)
+                    if bool(getattr(self.args, "kiosk_health_hud", True)):
+                        draw_kiosk_health(frame, self.args.camera, camera_backend, self._current_fps, pose is not None, bool(hands))
 
                 cv2.imshow(self.WINDOW_NAME, frame)
                 key = cv2.waitKeyEx(1)
@@ -522,7 +575,7 @@ class SmartMirrorAppV2(SmartMirrorApp):
                         self.snapshot_message_until = now + 2.5
                 elif key in (ord("i"), ord("I")):
                     if self.hybrid:
-                        self._start_hybrid_capture(pose, now)
+                        self._begin_hybrid_countdown(pose, now, "keyboard")
                     else:
                         self._start_ai_tryon(frame.copy(), selected_size, garment_rendered, now)
 

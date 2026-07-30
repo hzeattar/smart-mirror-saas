@@ -31,6 +31,8 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--gesture-debug", action=argparse.BooleanOptionalAction, default=False)
     p.add_argument("--ai-tryon", action=argparse.BooleanOptionalAction, default=False)
     p.add_argument("--experience", choices=["live", "hybrid"], default="live")
+    p.add_argument("--hybrid-auto-start", action=argparse.BooleanOptionalAction, default=True)
+    p.add_argument("--kiosk-health-hud", action=argparse.BooleanOptionalAction, default=True)
     p.add_argument("--session-log", action=argparse.BooleanOptionalAction, default=True)
     p.add_argument("--gesture-cooldown", type=float, default=1.10)
     p.add_argument("--gesture-hold", type=float, default=0.75)

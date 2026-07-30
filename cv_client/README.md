@@ -25,6 +25,18 @@ After the first successful pairing, the device token is stored under `.smart-mir
 python main.py --api-url https://YOUR-RAILWAY-DOMAIN
 ```
 
+Hybrid kiosk mode:
+
+```powershell
+cv_client\run_kiosk.ps1
+```
+
+Equivalent direct command:
+
+```bash
+python main.py --api-url https://YOUR-RAILWAY-DOMAIN --camera 0 --camera-backend dshow --ai-tryon --experience hybrid --hybrid-auto-start --kiosk-health-hud
+```
+
 Local texture mode:
 
 ```bash
@@ -42,6 +54,15 @@ python main.py --texture ./assets/sample_garment.png --reference-shoulder-cm 44
 - Hold a fist: hide on-screen controls.
 
 Every gesture has a hold threshold, movement threshold and cooldown to reduce accidental commands. A progress bar in the top-right panel shows when a hold gesture is about to trigger.
+
+## Hybrid kiosk gestures
+
+- Hold open palm: start the countdown/capture flow.
+- Open-palm swipe left/right: move through the outfit gallery.
+- Hold thumbs-up: show the QR code for the current result.
+- Hold a fist: close the gallery and return to the attractor.
+
+Hybrid mode can also auto-start after a centred person is visible for 1.5 seconds. Use `--no-hybrid-auto-start` to require manual open-palm start.
 
 Snapshots are saved by default under:
 

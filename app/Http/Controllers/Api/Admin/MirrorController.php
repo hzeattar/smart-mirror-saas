@@ -20,6 +20,7 @@ class MirrorController extends Controller
                 ->with([
                     'tryOnJobs' => fn ($query) => $query->latest()->limit(1),
                     'tryOnBatches' => fn ($query) => $query->latest()->limit(1),
+                    'sessionEvents' => fn ($query) => $query->latest('occurred_at')->limit(1),
                 ])
                 ->latest()
                 ->get()
@@ -46,6 +47,12 @@ class MirrorController extends Controller
                         'failed_at',
                         'error',
                     ]),
+                    'latest_session_event' => $mirror->sessionEvents->first()?->only([
+                        'event',
+                        'fps',
+                        'occurred_at',
+                    ]),
+                    'session_health' => $mirror->metadata['session_health'] ?? null,
                 ]),
         ]);
     }

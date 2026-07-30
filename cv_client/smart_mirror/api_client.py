@@ -89,6 +89,21 @@ class SmartMirrorApi:
     def heartbeat(self) -> None:
         self.session.post(f"{self.base_url}/api/mirror/heartbeat", timeout=8).raise_for_status()
 
+    def session_events(self, events: list[dict]) -> None:
+        if not events:
+            return
+        payload = []
+        for event in events:
+            payload.append(
+                {
+                    "event": str(event.get("event") or "runtime"),
+                    "ts": event.get("ts"),
+                    "fps": event.get("fps"),
+                    "payload": {key: value for key, value in event.items() if key not in {"event", "ts", "fps"}},
+                }
+            )
+        self.session.post(f"{self.base_url}/api/mirror/session-events", json={"events": payload}, timeout=8).raise_for_status()
+
     def create_try_on_job(self, product: CatalogProduct, snapshot_path: Path, sizing_chart_id: int | None = None) -> dict:
         data = {"product_id": str(product.id)}
         if sizing_chart_id:

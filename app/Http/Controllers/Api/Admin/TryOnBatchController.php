@@ -14,6 +14,11 @@ class TryOnBatchController extends Controller
     {
         $batches = TryOnBatch::query()
             ->forTenant($request->user()->tenant_id)
+            ->when($request->filled('status'), fn ($query) => $query->where('status', $request->string('status')))
+            ->when($request->filled('provider'), fn ($query) => $query->where('provider', $request->string('provider')))
+            ->when($request->filled('mirror_id'), fn ($query) => $query->where('mirror_id', $request->integer('mirror_id')))
+            ->when($request->filled('date_from'), fn ($query) => $query->whereDate('created_at', '>=', $request->date('date_from')))
+            ->when($request->filled('date_to'), fn ($query) => $query->whereDate('created_at', '<=', $request->date('date_to')))
             ->with(['mirror:id,location_name,device_name', 'jobs.product:id,name,sku,garment_type,unit_price,currency'])
             ->latest()
             ->paginate(20)
@@ -37,6 +42,7 @@ class TryOnBatchController extends Controller
                 'started_at' => $batch->started_at?->toIso8601String(),
                 'completed_at' => $batch->completed_at?->toIso8601String(),
                 'failed_at' => $batch->failed_at?->toIso8601String(),
+                'processing_seconds' => $batch->started_at && $batch->completed_at ? $batch->started_at->diffInSeconds($batch->completed_at) : null,
                 'expires_at' => $batch->expires_at?->toIso8601String(),
             ]);
 

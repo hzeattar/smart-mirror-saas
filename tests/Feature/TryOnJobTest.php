@@ -246,6 +246,109 @@ class TryOnJobTest extends TestCase
         Storage::disk('local')->assertMissing('try-on/results/old.jpg');
     }
 
+    public function test_try_on_job_can_store_media_on_s3_disk(): void
+    {
+        Storage::fake('s3');
+        config(['filesystems.default' => 's3', 'ai_tryon.provider' => 'mock']);
+
+        [, , $token, $product] = $this->mirrorFixture();
+
+        $response = $this->withToken($token)->post('/api/mirror/try-on-jobs', [
+            'product_id' => $product->id,
+            'snapshot' => UploadedFile::fake()->image('snapshot.jpg', 640, 480),
+        ])->assertCreated();
+
+        $resultPath = TryOnJob::query()->where('public_id', $response->json('job.id'))->value('result_image_path');
+        Storage::disk('s3')->assertExists($resultPath);
+    }
+
+    public function test_batch_failure_is_recorded_when_nvidia_is_not_configured(): void
+    {
+        Storage::fake('local');
+        config([
+            'filesystems.default' => 'local',
+            'ai_tryon.provider' => 'nvidia',
+            'ai_tryon.nvidia.api_key' => null,
+            'ai_tryon.nvidia.model' => null,
+        ]);
+
+        [$tenant, $mirror, $token, $product] = $this->mirrorFixture();
+
+        $response = $this->withToken($token)->post('/api/mirror/try-on-batches', [
+            'product_ids' => [$product->id],
+            'snapshot' => UploadedFile::fake()->image('snapshot.jpg', 640, 480),
+        ])->assertCreated();
+
+        $this->assertDatabaseHas('try_on_batches', [
+            'public_id' => $response->json('batch.id'),
+            'tenant_id' => $tenant->id,
+            'mirror_id' => $mirror->id,
+            'status' => 'failed',
+        ]);
+        $this->assertStringNotContainsString('api_key', (string) TryOnBatch::query()->where('public_id', $response->json('batch.id'))->value('error'));
+    }
+
+    public function test_mirror_session_events_are_accepted_and_update_health(): void
+    {
+        [$tenant, $mirror, $token] = $this->mirrorFixture();
+
+        $this->withToken($token)->postJson('/api/mirror/session-events', [
+            'events' => [
+                ['event' => 'runtime', 'fps' => 28.4, 'payload' => ['product_id' => 123]],
+                ['event' => 'gesture', 'payload' => ['action' => 'start_capture']],
+            ],
+        ])->assertOk()->assertJsonPath('accepted', 2);
+
+        $this->assertDatabaseHas('mirror_session_events', [
+            'tenant_id' => $tenant->id,
+            'mirror_id' => $mirror->id,
+            'event' => 'runtime',
+        ]);
+        $this->assertSame('gesture', $mirror->fresh()->metadata['session_health']['last_event']);
+    }
+
+    public function test_admin_can_filter_try_on_batches_and_jobs(): void
+    {
+        [$tenant, $mirror, , $product] = $this->mirrorFixture();
+        $user = User::query()->create([
+            'tenant_id' => $tenant->id,
+            'name' => 'Admin',
+            'email' => 'filter-'.Str::random(6).'@test.local',
+            'password' => 'password',
+            'role' => UserRole::Owner,
+            'status' => UserStatus::Active,
+        ]);
+        $batch = TryOnBatch::query()->create([
+            'public_id' => (string) Str::uuid(),
+            'tenant_id' => $tenant->id,
+            'mirror_id' => $mirror->id,
+            'status' => 'completed',
+            'provider' => 'mock',
+            'input_image_path' => 'try-on/batches/filter/input.jpg',
+            'outfit_count' => 1,
+            'completed_count' => 1,
+        ]);
+        $job = TryOnJob::query()->create([
+            'public_id' => (string) Str::uuid(),
+            'try_on_batch_id' => $batch->id,
+            'tenant_id' => $tenant->id,
+            'mirror_id' => $mirror->id,
+            'product_id' => $product->id,
+            'status' => TryOnJobStatus::Completed,
+            'provider' => 'mock',
+            'input_image_path' => 'try-on/batches/filter/input.jpg',
+        ]);
+
+        Sanctum::actingAs($user, ['admin']);
+
+        $this->getJson('/api/admin/try-on-batches?status=completed&provider=mock')
+            ->assertOk()
+            ->assertJsonPath('data.0.id', $batch->public_id);
+        $this->getJson('/api/admin/try-on-jobs?status=completed&provider=mock')
+            ->assertOk()
+            ->assertJsonPath('data.0.id', $job->public_id);
+    }
+
     private function mirrorFixture(): array
     {
         $tenant = Tenant::query()->create(['name' => 'Store', 'domain' => Str::random(8).'.test', 'status' => TenantStatus::Active]);

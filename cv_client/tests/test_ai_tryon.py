@@ -58,6 +58,12 @@ class AiTryOnTests(unittest.TestCase):
             row = json.loads(next((Path(directory) / "logs").glob("session-*.jsonl")).read_text(encoding="utf-8"))
             self.assertEqual("runtime", row["event"])
             self.assertEqual(24.5, row["fps"])
+            drained = logger.drain_remote()
+            self.assertEqual(1, len(drained))
+            self.assertEqual("runtime", drained[0]["event"])
+            self.assertEqual([], logger.drain_remote())
+            logger.restore_remote(drained)
+            self.assertEqual(1, len(logger.drain_remote()))
 
     def test_start_and_poll_try_on_job(self):
         with tempfile.TemporaryDirectory() as directory:

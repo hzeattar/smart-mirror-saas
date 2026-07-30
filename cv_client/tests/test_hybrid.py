@@ -5,7 +5,7 @@ import unittest
 import cv2
 import numpy as np
 
-from smart_mirror.hybrid import BurstFrame, HybridState, best_burst_frame, draw_attractor, frame_score
+from smart_mirror.hybrid import BurstFrame, HybridState, best_burst_frame, draw_attractor, draw_kiosk_health, frame_score, lighting_score
 
 
 class HybridTests(unittest.TestCase):
@@ -34,6 +34,12 @@ class HybridTests(unittest.TestCase):
         frame = np.zeros((240, 320, 3), dtype=np.uint8)
         draw_attractor(frame, 1.0, 0.5)
         self.assertGreater(int(frame.sum()), 0)
+
+    def test_lighting_score_and_health_hud(self):
+        dark = np.zeros((120, 160, 3), dtype=np.uint8)
+        self.assertEqual("LOW", lighting_score(dark))
+        draw_kiosk_health(dark, 0, "dshow", 28.0, True, False)
+        self.assertGreater(int(dark.sum()), 0)
 
     def test_hybrid_ready_jobs_filters_result_urls(self):
         state = HybridState(jobs=[{"result_url": ""}, {"result_url": "https://example.test/a.jpg"}])

@@ -56,6 +56,11 @@ class Mirror extends Model
         return $this->hasMany(TryOnBatch::class);
     }
 
+    public function sessionEvents(): HasMany
+    {
+        return $this->hasMany(MirrorSessionEvent::class);
+    }
+
     public function scopeForTenant(Builder $query, int $tenantId): Builder
     {
         return $query->where('tenant_id', $tenantId);

@@ -11,6 +11,10 @@ const cards = [
   ['orders_today', 'Orders today', 'requests created today'],
   ['pending_orders', 'Open workflow', 'orders needing attention'],
   ['online_mirrors', 'Online mirrors', 'devices currently connected'],
+  ['mirror_sessions_today', 'Mirror sessions', 'devices sending telemetry today'],
+  ['ai_batches_today', 'AI batches', 'gallery sessions created today'],
+  ['ai_completion_rate', 'AI completion', 'completed jobs percentage'],
+  ['ai_average_processing_seconds', 'AI seconds', 'average completed job time'],
 ]
 </script>
 <template>

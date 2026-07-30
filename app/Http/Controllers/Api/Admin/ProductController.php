@@ -24,6 +24,11 @@ class ProductController extends Controller
             ->latest()
             ->paginate(20);
 
+        $products->getCollection()->transform(fn (Product $product) => [
+            ...$product->toArray(),
+            'readiness' => $this->readiness($product),
+        ]);
+
         return response()->json($products);
     }
 
@@ -69,6 +74,7 @@ class ProductController extends Controller
 
         return response()->json([
             'product' => $product->load(['category', 'sizingCharts']),
+            'readiness' => $this->readiness($product),
         ], 201);
     }
 
@@ -78,6 +84,7 @@ class ProductController extends Controller
 
         return response()->json([
             'product' => $product->load(['category', 'sizingCharts']),
+            'readiness' => $this->readiness($product),
         ]);
     }
 
@@ -116,8 +123,11 @@ class ProductController extends Controller
             ProcessGarmentImage::dispatch($product->id);
         }
 
+        $fresh = $product->fresh()->load(['category', 'sizingCharts']);
+
         return response()->json([
-            'product' => $product->fresh()->load(['category', 'sizingCharts']),
+            'product' => $fresh,
+            'readiness' => $this->readiness($fresh),
         ]);
     }
 
@@ -210,6 +220,32 @@ class ProductController extends Controller
     private function defaultTextureAnchor(): array
     {
         return ['left' => 0, 'right' => 0, 'top' => 0, 'bottom' => 0];
+    }
+
+    private function readiness(Product $product): array
+    {
+        $sizesReady = $product->relationLoaded('sizingCharts')
+            ? $product->sizingCharts->count() >= 4
+            : $product->sizingCharts()->count() >= 4;
+        $hasImage = filled($product->base_image_url) || filled($product->base_image_path);
+        $hasTexture = filled($product->texture_image_url) || filled($product->texture_image_path);
+        $localGeneratedDemo = str_contains((string) $product->description, 'Local realistic demo garment texture')
+            || str_starts_with((string) $product->sku, 'REAL-');
+
+        return [
+            'image_ready' => $hasImage,
+            'texture_ready' => $hasTexture,
+            'sizes_ready' => $sizesReady,
+            'ai_ready' => $hasImage && $hasTexture && $sizesReady,
+            'production_asset_ready' => $hasImage && $hasTexture && ! $localGeneratedDemo,
+            'status' => match (true) {
+                ! $hasImage => 'needs_image',
+                ! $hasTexture => 'needs_texture',
+                ! $sizesReady => 'needs_sizes',
+                $localGeneratedDemo => 'demo_asset',
+                default => 'ready',
+            },
+        ];
     }
 
     private function assertCategory(int $tenantId, ?int $categoryId): void

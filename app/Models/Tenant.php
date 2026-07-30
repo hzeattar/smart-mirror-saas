@@ -58,4 +58,9 @@ class Tenant extends Model
     {
         return $this->hasMany(TryOnBatch::class);
     }
+
+    public function mirrorSessionEvents(): HasMany
+    {
+        return $this->hasMany(MirrorSessionEvent::class);
+    }
 }

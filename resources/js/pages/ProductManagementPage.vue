@@ -182,6 +182,7 @@ async function reprocess(product) {
 }
 
 function readiness(product) {
+  if (product.readiness?.status) return product.readiness.status
   if (!product.texture_image_url && !product.base_image_url) return 'needs_image'
   if (product.background_removal_status === 'failed') return 'failed'
   if (!product.texture_image_url) return 'preparing'
@@ -308,6 +309,7 @@ function readiness(product) {
           <span>AI readiness</span>
           <StatusPill :value="readiness(product)" />
         </div>
+        <small v-if="product.readiness && !product.readiness.production_asset_ready" class="muted">Demo asset; replace with store-owned product photo for production.</small>
         <div class="card-actions">
           <button class="text-btn" @click="edit(product)">Edit</button>
           <button v-if="product.base_image_path" class="text-btn" @click="reprocess(product)">Reprocess</button>

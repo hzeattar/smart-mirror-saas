@@ -6,8 +6,11 @@ use App\Enums\MirrorStatus;
 use App\Enums\OrderStatus;
 use App\Http\Controllers\Controller;
 use App\Models\Mirror;
+use App\Models\MirrorSessionEvent;
 use App\Models\Order;
 use App\Models\Product;
+use App\Models\TryOnBatch;
+use App\Models\TryOnJob;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -23,6 +26,40 @@ class DashboardController extends Controller
             'pending_orders' => Order::query()->forTenant($tenantId)->whereNotIn('status', [OrderStatus::Completed, OrderStatus::Cancelled])->count(),
             'online_mirrors' => Mirror::query()->forTenant($tenantId)->where('status', MirrorStatus::Online)->count(),
             'revenue_today' => (float) Order::query()->forTenant($tenantId)->whereDate('created_at', today())->where('status', '!=', OrderStatus::Cancelled)->sum('total'),
+            'mirror_sessions_today' => MirrorSessionEvent::query()->forTenant($tenantId)->whereDate('occurred_at', today())->distinct('mirror_id')->count('mirror_id'),
+            'ai_batches_today' => TryOnBatch::query()->forTenant($tenantId)->whereDate('created_at', today())->count(),
+            'ai_completion_rate' => $this->completionRate($tenantId),
+            'ai_average_processing_seconds' => $this->averageProcessingSeconds($tenantId),
+            'ai_failed_jobs' => TryOnJob::query()->forTenant($tenantId)->where('status', 'failed')->count(),
         ]]);
+    }
+
+    private function completionRate(int $tenantId): float
+    {
+        $total = TryOnJob::query()->forTenant($tenantId)->whereIn('status', ['completed', 'failed'])->count();
+        if ($total === 0) {
+            return 0.0;
+        }
+
+        $completed = TryOnJob::query()->forTenant($tenantId)->where('status', 'completed')->count();
+
+        return round(($completed / $total) * 100, 1);
+    }
+
+    private function averageProcessingSeconds(int $tenantId): float
+    {
+        $jobs = TryOnJob::query()
+            ->forTenant($tenantId)
+            ->whereNotNull('started_at')
+            ->whereNotNull('completed_at')
+            ->latest()
+            ->limit(200)
+            ->get(['started_at', 'completed_at']);
+
+        if ($jobs->isEmpty()) {
+            return 0.0;
+        }
+
+        return round($jobs->avg(fn (TryOnJob $job) => $job->started_at->diffInSeconds($job->completed_at)), 1);
     }
 }

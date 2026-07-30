@@ -19,11 +19,11 @@ export APP_DEBUG="${APP_DEBUG:-false}"
 export LOG_CHANNEL="${LOG_CHANNEL:-stderr}"
 export LOG_LEVEL="${LOG_LEVEL:-info}"
 
-# Keep authentication and throttling independent from database cache tables.
-# A dedicated queue worker can be introduced later as a separate Railway service.
-export CACHE_STORE="file"
-export SESSION_DRIVER="file"
-export QUEUE_CONNECTION="sync"
+# Keep authentication and throttling independent from database cache tables by default.
+# Queue/storage can be promoted through Railway variables without changing the image.
+export CACHE_STORE="${CACHE_STORE:-file}"
+export SESSION_DRIVER="${SESSION_DRIVER:-file}"
+export QUEUE_CONNECTION="${QUEUE_CONNECTION:-sync}"
 
 if [[ -z "${APP_KEY:-}" ]]; then
   export APP_KEY="base64:$(php -r 'echo base64_encode(random_bytes(32));')"

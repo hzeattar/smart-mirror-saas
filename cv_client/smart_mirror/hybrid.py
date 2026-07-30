@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -10,7 +11,7 @@ import numpy as np
 from .ai_tryon import make_qr_image
 
 
-HYBRID_MODES = {"idle_attractor", "align_user", "capture_burst", "generating", "gallery"}
+HYBRID_MODES = {"idle_attractor", "align_user", "countdown", "capture_burst", "generating", "gallery"}
 
 
 @dataclass
@@ -29,6 +30,8 @@ class HybridState:
     current_index: int = 0
     burst: list[BurstFrame] = field(default_factory=list)
     capture_started_at: float = 0.0
+    countdown_started_at: float = 0.0
+    presence_started_at: float = 0.0
     last_poll_at: float = 0.0
     qr_image: np.ndarray | None = None
     qr_visible: bool = False
@@ -36,7 +39,7 @@ class HybridState:
 
     @property
     def active(self) -> bool:
-        return self.mode in {"capture_burst", "generating"}
+        return self.mode in {"countdown", "capture_burst", "generating"}
 
     @property
     def ready_jobs(self) -> list[dict]:
@@ -118,6 +121,12 @@ def draw_hybrid_hud(frame: np.ndarray, state: HybridState, gesture_label: str = 
         cv2.rectangle(frame, (x0 + 22, y0 + 142), (x0 + 22 + bar_w, y0 + 154), (54, 58, 66), -1)
         cv2.rectangle(frame, (x0 + 22, y0 + 142), (x0 + 22 + int(bar_w * gesture_progress), y0 + 154), (68, 221, 255), -1)
 
+    if state.mode == "countdown":
+        remaining = max(1, int(2.0 - (time.monotonic() - state.countdown_started_at)) + 1)
+        cv2.putText(frame, str(remaining), (x0 + 22, y0 + 230), cv2.FONT_HERSHEY_SIMPLEX, 2.2, (255, 220, 72), 4, cv2.LINE_AA)
+        cv2.putText(frame, "HOLD STILL", (x0 + 120, y0 + 230), cv2.FONT_HERSHEY_SIMPLEX, 0.72, (245, 245, 245), 2, cv2.LINE_AA)
+        return
+
     if state.mode == "capture_burst":
         cv2.putText(frame, f"CAPTURING {len(state.burst)}/5", (x0 + 22, y0 + 205), cv2.FONT_HERSHEY_SIMPLEX, 0.72, (255, 220, 72), 2, cv2.LINE_AA)
         return
@@ -176,3 +185,28 @@ def save_hybrid_snapshot(frame: np.ndarray, directory: str | Path) -> Path:
     if not cv2.imwrite(str(path), frame, [cv2.IMWRITE_JPEG_QUALITY, 92]):
         raise RuntimeError(f"Unable to write hybrid snapshot: {path}")
     return path
+
+
+def lighting_score(frame: np.ndarray) -> str:
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    mean = float(np.mean(gray))
+    if mean < 55:
+        return "LOW"
+    if mean > 220:
+        return "HIGH"
+    return "OK"
+
+
+def draw_kiosk_health(frame: np.ndarray, camera_index: int, backend: str, fps: float, pose_visible: bool, hand_visible: bool) -> None:
+    h, _w = frame.shape[:2]
+    labels = [
+        f"CAM {camera_index} {backend}",
+        f"FPS {fps:.1f}",
+        f"LIGHT {lighting_score(frame)}",
+        f"POSE {'YES' if pose_visible else 'NO'}",
+        f"HAND {'YES' if hand_visible else 'NO'}",
+    ]
+    x, y = 18, h - 22
+    for label in labels:
+        cv2.putText(frame, label, (x, y), cv2.FONT_HERSHEY_SIMPLEX, 0.44, (230, 230, 230), 1, cv2.LINE_AA)
+        x += max(86, len(label) * 10)

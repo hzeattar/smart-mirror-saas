@@ -83,17 +83,27 @@ The PHP Railway image does not install the large Python vision stack. In product
 
 ## AI try-on jobs
 
-The mirror can create asynchronous AI try-on jobs without blocking the live camera. The default provider is `mock`, which stores a generated result for end-to-end testing. NVIDIA integration is isolated behind the provider layer and only runs when `AI_TRYON_PROVIDER=nvidia`, `NVIDIA_API_KEY`, and `NVIDIA_TRYON_MODEL` are configured.
+The mirror can create asynchronous AI try-on jobs and outfit batches without blocking the live camera. The default provider is `mock`, which stores a generated result for end-to-end testing. NVIDIA integration is isolated behind the provider layer and only runs when `AI_TRYON_PROVIDER=nvidia`, `NVIDIA_API_KEY`, and `NVIDIA_TRYON_MODEL` are configured.
 
 - `POST /api/mirror/try-on-jobs`
 - `GET /api/mirror/try-on-jobs/{job}`
+- `POST /api/mirror/try-on-batches`
+- `GET /api/mirror/try-on-batches/{batch}`
+- `POST /api/mirror/session-events`
+- `GET /api/admin/try-on-batches`
 - `GET /api/admin/try-on-jobs`
 
-Expired try-on media can be purged with `php artisan tryon:purge-expired`. Do not commit provider API keys; configure them as environment variables.
+Expired try-on media can be purged with `php artisan tryon:purge-expired`. Do not commit provider API keys; configure them as environment variables. Production S3, queue worker, scheduler and NVIDIA activation notes are in [`docs/PRODUCTION_OPERATIONS.md`](docs/PRODUCTION_OPERATIONS.md).
 
 ## Computer vision client
 
 See [`cv_client/README.md`](cv_client/README.md). The calibration profile is tied to the exact camera position, resolution and fixed two-metre standing mark.
+
+Hybrid kiosk launch on Windows:
+
+```powershell
+cv_client\run_kiosk.ps1
+```
 
 ## Security baseline
 
