@@ -107,5 +107,22 @@ php artisan route:cache
 php artisan view:cache
 
 log "Runtime ready: DB=${DB_CONNECTION}, CACHE=${CACHE_STORE}, QUEUE=${QUEUE_CONNECTION}, APP_URL=${APP_URL:-unset}"
-log "Starting FrankenPHP on Railway PORT=${PORT:-8080}"
-exec docker-php-entrypoint --config /Caddyfile --adapter caddyfile 2>&1
+
+case "${APP_PROCESS:-web}" in
+  worker)
+    log "Starting Laravel queue worker"
+    exec bash start-worker.sh
+    ;;
+  scheduler)
+    log "Starting scheduled purge loop"
+    exec bash start-scheduler.sh
+    ;;
+  web)
+    log "Starting FrankenPHP on Railway PORT=${PORT:-8080}"
+    exec docker-php-entrypoint --config /Caddyfile --adapter caddyfile 2>&1
+    ;;
+  *)
+    log "ERROR: unsupported APP_PROCESS=${APP_PROCESS}"
+    exit 1
+    ;;
+esac
