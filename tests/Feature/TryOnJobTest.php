@@ -295,7 +295,7 @@ class TryOnJobTest extends TestCase
         $this->withToken($token)->postJson('/api/mirror/session-events', [
             'events' => [
                 ['event' => 'runtime', 'fps' => 28.4, 'payload' => ['product_id' => 123]],
-                ['event' => 'gesture', 'payload' => ['action' => 'start_capture']],
+                ['event' => 'gesture', 'ts' => 1785434458.9, 'payload' => ['action' => 'start_capture']],
             ],
         ])->assertOk()->assertJsonPath('accepted', 2);
 

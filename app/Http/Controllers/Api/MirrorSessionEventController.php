@@ -7,6 +7,7 @@ use App\Models\Mirror;
 use App\Models\MirrorSessionEvent;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 
 class MirrorSessionEventController extends Controller
 {
@@ -15,7 +16,7 @@ class MirrorSessionEventController extends Controller
         $data = $request->validate([
             'events' => ['required', 'array', 'min:1', 'max:50'],
             'events.*.event' => ['required', 'string', 'max:80'],
-            'events.*.ts' => ['nullable', 'date'],
+            'events.*.ts' => ['nullable'],
             'events.*.fps' => ['nullable', 'numeric', 'min:0', 'max:240'],
             'events.*.payload' => ['nullable', 'array'],
         ]);
@@ -28,7 +29,7 @@ class MirrorSessionEventController extends Controller
             'event' => $event['event'],
             'fps' => $event['fps'] ?? ($event['payload']['fps'] ?? null),
             'payload' => json_encode($event['payload'] ?? collect($event)->except(['event', 'ts', 'fps'])->all(), JSON_THROW_ON_ERROR),
-            'occurred_at' => isset($event['ts']) ? date('Y-m-d H:i:s', strtotime((string) $event['ts'])) : now(),
+            'occurred_at' => $this->occurredAt($event['ts'] ?? null),
             'created_at' => now(),
             'updated_at' => now(),
         ])->all();
@@ -45,5 +46,22 @@ class MirrorSessionEventController extends Controller
         $mirror->update(['metadata' => $metadata]);
 
         return response()->json(['accepted' => count($rows)]);
+    }
+
+    private function occurredAt(mixed $value): Carbon
+    {
+        if ($value === null || $value === '') {
+            return now();
+        }
+
+        try {
+            if (is_numeric($value)) {
+                return Carbon::createFromTimestamp((float) $value);
+            }
+
+            return Carbon::parse((string) $value);
+        } catch (\Throwable) {
+            return now();
+        }
     }
 }
