@@ -15,7 +15,7 @@ from .hybrid import (
     BurstFrame,
     HybridState,
     best_burst_frame,
-    draw_attractor,
+    draw_body_scan,
     draw_hybrid_hud,
     draw_kiosk_health,
     frame_score,
@@ -506,8 +506,8 @@ class SmartMirrorAppV2(SmartMirrorApp):
                     gesture_label = "STEP BACK: SHOW HIPS AND FEET"
                     gesture_progress = 0.0
 
-                if self.hybrid and self.hybrid.mode in {"idle_attractor", "align_user", "generating"}:
-                    draw_attractor(frame, now, 1.0 if pose else 0.0)
+                if self.hybrid and self.hybrid.mode in {"idle_attractor", "align_user", "countdown", "capture_burst", "generating"}:
+                    draw_body_scan(frame, now, pose, 1.0 if pose else 0.35)
 
                 self.hitboxes = draw_smart_ui(
                     frame,

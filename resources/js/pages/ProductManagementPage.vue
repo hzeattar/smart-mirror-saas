@@ -188,6 +188,10 @@ function readiness(product) {
   if (!product.texture_image_url) return 'preparing'
   return 'ready'
 }
+
+function markImageBroken(product) {
+  product._imageBroken = true
+}
 </script>
 
 <template>
@@ -292,7 +296,12 @@ function readiness(product) {
   <section class="product-grid">
     <article class="product-card" v-for="product in products" :key="product.id">
       <div class="product-image">
-        <img v-if="product.texture_image_url || product.base_image_url" :src="product.texture_image_url || product.base_image_url">
+        <img
+          v-if="(product.texture_image_url || product.base_image_url) && !product._imageBroken"
+          :src="product.texture_image_url || product.base_image_url"
+          :alt="product.name"
+          @error="markImageBroken(product)"
+        >
         <span v-else>No image</span>
       </div>
       <div class="product-body">

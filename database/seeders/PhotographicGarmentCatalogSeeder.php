@@ -45,7 +45,7 @@ class PhotographicGarmentCatalogSeeder extends Seeder
                 $query->whereIn('sku', ['TSHIRT-001', 'HOODIE-001', 'POLO-001'])
                     ->orWhere('sku', 'like', 'PHOTO-%');
             })
-            ->update(['status' => ProductStatus::Inactive->value]);
+            ->delete();
 
         $products = [
             [

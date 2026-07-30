@@ -1,0 +1,94 @@
+{
+  "assets": [
+    {
+      "file": "real-white-oxford-shirt.webp",
+      "title": "White Oxford Shirt",
+      "source": "AI-generated local photorealistic demo asset using Pollinations image endpoint",
+      "license": "Demo placeholder; replace with store-owned or commercially licensed product photography before commercial launch.",
+      "generated_at": "2026-07-30T19:27:15Z",
+      "prompt": "photorealistic ecommerce product photo of a crisp white oxford dress shirt, front view, full garment, on plain warm light gray background, studio softbox lighting, no model, no hanger, no text, realistic cotton fabric texture",
+      "seed": 1201
+    },
+    {
+      "file": "real-black-vneck-tshirt.webp",
+      "title": "Black V-Neck T-Shirt",
+      "source": "AI-generated local photorealistic demo asset using Pollinations image endpoint",
+      "license": "Demo placeholder; replace with store-owned or commercially licensed product photography before commercial launch.",
+      "generated_at": "2026-07-30T19:28:00Z",
+      "prompt": "photorealistic ecommerce product photo of a black v-neck t-shirt, front view, full garment, subtle cotton knit texture, plain light gray background, studio lighting, no model, no text",
+      "seed": 1202
+    },
+    {
+      "file": "real-sage-linen-shirt.webp",
+      "title": "Sage Linen Shirt",
+      "source": "AI-generated local photorealistic demo asset using Pollinations image endpoint",
+      "license": "Demo placeholder; replace with store-owned or commercially licensed product photography before commercial launch.",
+      "generated_at": "2026-07-30T19:28:46Z",
+      "prompt": "photorealistic ecommerce product photo of a sage green linen button shirt, front view, full garment, realistic linen weave and wrinkles, plain light gray background, studio lighting, no model, no text",
+      "seed": 1203
+    },
+    {
+      "file": "real-denim-jacket.webp",
+      "title": "Classic Denim Jacket",
+      "source": "AI-generated local photorealistic demo asset using Pollinations image endpoint",
+      "license": "Demo placeholder; replace with store-owned or commercially licensed product photography before commercial launch.",
+      "generated_at": "2026-07-30T19:29:30Z",
+      "prompt": "photorealistic ecommerce product photo of a medium blue denim jacket, front view, full garment, realistic denim seams pockets and metal buttons, plain light gray background, studio lighting, no model, no text",
+      "seed": 1204
+    },
+    {
+      "file": "real-charcoal-hoodie.webp",
+      "title": "Charcoal Everyday Hoodie",
+      "source": "AI-generated local photorealistic demo asset using Pollinations image endpoint",
+      "license": "Demo placeholder; replace with store-owned or commercially licensed product photography before commercial launch.",
+      "generated_at": "2026-07-30T19:30:15Z",
+      "prompt": "photorealistic ecommerce product photo of a charcoal gray pullover hoodie, front view, full garment, realistic fleece fabric, drawstrings and kangaroo pocket, plain light gray background, studio lighting, no model, no text",
+      "seed": 1205
+    },
+    {
+      "file": "real-khaki-chinos.webp",
+      "title": "Khaki Straight-Leg Chinos",
+      "source": "AI-generated local photorealistic demo asset using Pollinations image endpoint",
+      "license": "Demo placeholder; replace with store-owned or commercially licensed product photography before commercial launch.",
+      "generated_at": "2026-07-30T19:31:00Z",
+      "prompt": "photorealistic ecommerce product photo of khaki straight leg chinos trousers, front view, full garment, realistic twill texture, plain light gray background, studio lighting, no model, no text",
+      "seed": 1206
+    },
+    {
+      "file": "real-black-tailored-trousers.webp",
+      "title": "Black Tailored Trousers",
+      "source": "AI-generated local photorealistic demo asset using Pollinations image endpoint",
+      "license": "Demo placeholder; replace with store-owned or commercially licensed product photography before commercial launch.",
+      "generated_at": "2026-07-30T19:31:46Z",
+      "prompt": "photorealistic ecommerce product photo of black tailored dress trousers, front view, full garment, realistic wool blend fabric and crease, plain light gray background, studio lighting, no model, no text",
+      "seed": 1207
+    },
+    {
+      "file": "real-navy-suit-jacket.webp",
+      "title": "Tailored Navy Suit Jacket",
+      "source": "AI-generated local photorealistic demo asset using Pollinations image endpoint",
+      "license": "Demo placeholder; replace with store-owned or commercially licensed product photography before commercial launch.",
+      "generated_at": "2026-07-30T19:32:30Z",
+      "prompt": "photorealistic ecommerce product photo of a tailored navy suit jacket, front view, full garment, realistic wool texture lapels and buttons, plain light gray background, studio lighting, no model, no text",
+      "seed": 1208
+    },
+    {
+      "file": "real-grey-two-piece-suit.webp",
+      "title": "Grey Two-Piece Suit",
+      "source": "AI-generated local photorealistic demo asset using Pollinations image endpoint",
+      "license": "Demo placeholder; replace with store-owned or commercially licensed product photography before commercial launch.",
+      "generated_at": "2026-07-30T19:33:15Z",
+      "prompt": "photorealistic ecommerce product photo of a grey two piece suit jacket and trousers arranged together, front view, full outfit, realistic wool fabric, plain light gray background, studio lighting, no model, no text",
+      "seed": 1209
+    },
+    {
+      "file": "real-burgundy-midi-dress.webp",
+      "title": "Burgundy Midi Dress",
+      "source": "AI-generated local photorealistic demo asset using Pollinations image endpoint",
+      "license": "Demo placeholder; replace with store-owned or commercially licensed product photography before commercial launch.",
+      "generated_at": "2026-07-30T19:34:00Z",
+      "prompt": "photorealistic ecommerce product photo of a burgundy midi dress, front view, full garment, realistic fabric drape, plain light gray background, studio lighting, no model, no text",
+      "seed": 1210
+    }
+  ]
+}

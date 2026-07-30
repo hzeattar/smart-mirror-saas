@@ -21,6 +21,7 @@ class ProductController extends Controller
         $products = Product::query()
             ->forTenant($request->user()->tenant_id)
             ->with(['category', 'sizingCharts'])
+            ->when(! $request->boolean('include_inactive'), fn ($query) => $query->where('status', ProductStatus::Active))
             ->latest()
             ->paginate(20);
 

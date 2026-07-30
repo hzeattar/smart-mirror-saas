@@ -102,6 +102,73 @@ def draw_attractor(frame: np.ndarray, now: float, presence: float = 0.0) -> None
     cv2.circle(frame, (cx, cy), radius + 24, (255, 255, 255), 2, lineType=cv2.LINE_AA)
 
 
+def draw_body_scan(frame: np.ndarray, now: float, pose=None, intensity: float = 1.0) -> None:
+    h, w = frame.shape[:2]
+    overlay = frame.copy()
+    pulse = 0.5 + 0.5 * math.sin(now * 3.2)
+    cyan = (88, 224, 213)
+    amber = (255, 207, 92)
+
+    if pose is None:
+        cx = w // 2
+        top = int(h * 0.20)
+        bottom = int(h * 0.84)
+        width = int(min(w, h) * 0.34)
+        scan_y = top + int(((now * 0.28) % 1.0) * (bottom - top))
+        cv2.ellipse(overlay, (cx, (top + bottom) // 2), (width, (bottom - top) // 2), 0, 0, 360, cyan, 2, cv2.LINE_AA)
+        cv2.line(overlay, (cx - width, scan_y), (cx + width, scan_y), amber, 3, cv2.LINE_AA)
+        for offset in range(-2, 3):
+            y = scan_y + offset * 14
+            alpha = max(0.0, 1.0 - abs(offset) * 0.24)
+            cv2.line(overlay, (cx - width + 22, y), (cx + width - 22, y), cyan, max(1, int(2 * alpha)), cv2.LINE_AA)
+        cv2.addWeighted(overlay, 0.34 + 0.12 * pulse, frame, 0.66 - 0.12 * pulse, 0, dst=frame)
+        return
+
+    points = [
+        pose.left_shoulder,
+        pose.right_shoulder,
+        pose.right_hip,
+        pose.left_hip,
+    ]
+    xs = [int(max(0, min(w - 1, p.x))) for p in points]
+    ys = [int(max(0, min(h - 1, p.y))) for p in points]
+    pad_x = max(42, int(getattr(pose, "shoulder_pixels", w * 0.18) * 0.34))
+    pad_y = max(32, int(getattr(pose, "torso_pixels", h * 0.22) * 0.20))
+    left = max(16, min(xs) - pad_x)
+    right = min(w - 16, max(xs) + pad_x)
+    top = max(24, min(ys) - pad_y)
+    bottom = min(h - 24, max(ys) + pad_y)
+    if bottom - top < 80 or right - left < 80:
+        return
+
+    polygon = np.array([[left, top + 24], [right, top + 24], [right - 18, bottom], [left + 18, bottom]], dtype=np.int32)
+    cv2.polylines(overlay, [polygon], True, cyan, 2, cv2.LINE_AA)
+
+    scan_y = top + int(((now * 0.42) % 1.0) * (bottom - top))
+    band_top = max(top, scan_y - 22)
+    band_bottom = min(bottom, scan_y + 22)
+    cv2.rectangle(overlay, (left + 8, band_top), (right - 8, band_bottom), (40, 215, 224), -1, cv2.LINE_AA)
+    cv2.line(overlay, (left + 10, scan_y), (right - 10, scan_y), amber, 3, cv2.LINE_AA)
+
+    for i in range(10):
+        t = i / 9
+        x = int(left + (right - left) * t)
+        cv2.line(overlay, (x, top + 28), (x, bottom - 12), (42, 128, 145), 1, cv2.LINE_AA)
+    for y in range(top + 38, bottom, 42):
+        cv2.line(overlay, (left + 18, y), (right - 18, y), (42, 128, 145), 1, cv2.LINE_AA)
+
+    shoulder_left = (int(pose.left_shoulder.x), int(pose.left_shoulder.y))
+    shoulder_right = (int(pose.right_shoulder.x), int(pose.right_shoulder.y))
+    hip_left = (int(pose.left_hip.x), int(pose.left_hip.y))
+    hip_right = (int(pose.right_hip.x), int(pose.right_hip.y))
+    cv2.line(overlay, shoulder_left, shoulder_right, amber, 2, cv2.LINE_AA)
+    cv2.line(overlay, hip_left, hip_right, amber, 2, cv2.LINE_AA)
+    cv2.circle(overlay, shoulder_left, 6, amber, -1, cv2.LINE_AA)
+    cv2.circle(overlay, shoulder_right, 6, amber, -1, cv2.LINE_AA)
+
+    cv2.addWeighted(overlay, min(0.50, 0.30 + intensity * 0.20), frame, 0.70, 0, dst=frame)
+
+
 def draw_hybrid_hud(frame: np.ndarray, state: HybridState, gesture_label: str = "", gesture_progress: float = 0.0) -> None:
     h, w = frame.shape[:2]
     panel_w = min(470, max(340, int(w * 0.34)))
