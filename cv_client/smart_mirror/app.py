@@ -26,7 +26,7 @@ from .snapshots import SnapshotMetadata, save_snapshot
 
 
 class SmartMirrorApp:
-    WINDOW_NAME = "Smart Mirror — Q to exit"
+    WINDOW_NAME = "Smart Mirror - Q to exit"
 
     def __init__(self, args):
         self.args = args

@@ -64,8 +64,8 @@ class SmartMirrorAppV2(SmartMirrorApp):
             "capture_duration_seconds": 2.0,
             "gallery_timeout_seconds": 45.0,
             "poll_interval_seconds": 2.5,
-            "pose_every_n": int(getattr(args, "pose_every_n", 2)),
-            "hand_every_n": int(getattr(args, "hand_every_n", 2)),
+            "pose_every_n": int(getattr(args, "pose_every_n", 3)),
+            "hand_every_n": int(getattr(args, "hand_every_n", 3)),
             "kiosk_health_hud": bool(getattr(args, "kiosk_health_hud", True)),
         }
 
@@ -549,7 +549,7 @@ class SmartMirrorAppV2(SmartMirrorApp):
                 self._poll_ai_tryon(now)
                 self._poll_hybrid_batch(now)
                 self._collect_preview_futures()
-                if hand_tracker and self._loop_frame_index % self._cfg_int("hand_every_n", 2) == 0:
+                if hand_tracker and self._loop_frame_index % self._cfg_int("hand_every_n", 3) == 0:
                     self._last_hands = hand_tracker.detect(frame, timestamp_ms)
                 hands = self._last_hands if hand_tracker else []
                 self.gesture_status = gesture_engine.update(hands, now) if gesture_engine else GestureStatus()
@@ -574,7 +574,7 @@ class SmartMirrorAppV2(SmartMirrorApp):
                         self.handle_action(action)
 
                 detected_pose = None
-                if self._loop_frame_index % self._cfg_int("pose_every_n", 2) == 0:
+                if self._loop_frame_index % self._cfg_int("pose_every_n", 3) == 0:
                     detected_pose = pose_tracker.detect(frame, timestamp_ms)
                 if detected_pose:
                     self.last_pose = self.pose_smoother.update(detected_pose)

@@ -2,6 +2,8 @@ param(
     [string]$ApiUrl = "https://smart-mirror-saas-production.up.railway.app",
     [string]$DeviceName = "Main Store Mirror",
     [int]$Camera = 0,
+    [int]$Width = 640,
+    [int]$Height = 360,
     [ValidateSet("auto", "dshow", "msmf", "any")]
     [string]$CameraBackend = "dshow",
     [switch]$NoGestureDebug,
@@ -27,6 +29,8 @@ try {
         "--device-name", $DeviceName,
         "--camera", "$Camera",
         "--camera-backend", $CameraBackend,
+        "--width", "$Width",
+        "--height", "$Height",
         "--ai-tryon",
         "--experience", "hybrid",
         "--hybrid-auto-start",

@@ -208,8 +208,29 @@ function readiness(product) {
   return 'ready'
 }
 
+function issueLabel(issue) {
+  const labels = {
+    missing_photo: 'Missing front photo',
+    missing_file: 'Missing uploaded file',
+    missing_cutout: 'Missing transparent cutout',
+    needs_four_sizes: 'Needs at least 4 sizes',
+    no_transparent_cutout_detected: 'Texture is not transparent',
+    texture_mostly_transparent: 'Texture is mostly transparent',
+    resolution_below_600px: 'Image resolution is below 600px',
+    extreme_aspect_ratio: 'Image aspect ratio looks wrong',
+    demo_asset: 'Demo asset only',
+    missing_asset_metadata: 'Missing source or license',
+  }
+  return labels[issue] || issue.replaceAll('_', ' ')
+}
+
 function qaIssues(product) {
-  return product.readiness?.issues?.filter(Boolean).slice(0, 3).join(', ') || ''
+  return product.readiness?.issues?.filter(Boolean).slice(0, 4).map(issueLabel).join(', ') || ''
+}
+
+function mirrorGateText(product) {
+  if (product.readiness?.mirror_catalog_ready) return 'Visible in mirror catalog'
+  return qaIssues(product) || 'Needs image, texture, QA, and 4 sizes before mirror use'
 }
 
 function markImageBroken(product) {
@@ -337,6 +358,10 @@ async function setReadinessFilter(value) {
   </section>
 
   <section class="product-grid">
+    <div v-if="loading" class="empty-state">
+      <h3>Loading products</h3>
+      <p>Checking catalog readiness and image QA.</p>
+    </div>
     <article class="product-card" v-for="product in products" :key="product.id">
       <div class="product-image">
         <img
@@ -362,7 +387,8 @@ async function setReadinessFilter(value) {
           <StatusPill :value="readiness(product)" />
         </div>
         <small v-if="qaIssues(product)" class="muted">QA: {{ qaIssues(product) }}</small>
-        <small v-if="product.readiness && !product.readiness.production_asset_ready" class="muted">Demo asset; replace with store-owned product photo for production.</small>
+        <small class="muted">{{ mirrorGateText(product) }}</small>
+        <small v-if="product.readiness && !product.readiness.production_asset_ready" class="muted">Production gate: add store-owned images and source metadata before commercial use.</small>
         <div class="card-actions">
           <button class="text-btn" @click="edit(product)">Edit</button>
           <button v-if="product.base_image_path" class="text-btn" @click="reprocess(product)">Reprocess</button>

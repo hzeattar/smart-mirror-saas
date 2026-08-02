@@ -13,6 +13,7 @@ const loading = ref(false)
 const saving = ref(false)
 const error = ref('')
 const success = ref('')
+const refreshedAt = ref(null)
 
 async function load() {
   loading.value = true
@@ -23,6 +24,7 @@ async function load() {
     ])
     evaluations.value = evaluationResponse.data.data || []
     products.value = productResponse.data.data || []
+    refreshedAt.value = new Date()
   } catch (exception) {
     error.value = errorMessage(exception)
   } finally {
@@ -75,19 +77,23 @@ onMounted(load)
 </script>
 
 <template>
-  <PageHeader eyebrow="AI bench" title="Try-on evaluation" description="Run provider quality checks with real body samples before enabling cloud AI for kiosk users." />
+  <PageHeader eyebrow="AI bench" title="Try-on evaluation" description="Run provider quality checks with real body samples before enabling cloud AI for kiosk users.">
+    <button class="btn btn-secondary" :disabled="loading" @click="load">{{ loading ? 'Refreshing...' : 'Refresh' }}</button>
+  </PageHeader>
 
   <p v-if="error" class="form-error">{{ error }}</p>
   <p v-if="success" class="form-success">{{ success }}</p>
+  <p v-if="refreshedAt" class="muted page-note">Last refreshed {{ refreshedAt.toLocaleTimeString() }}</p>
 
   <section class="panel evaluation-form">
-    <div class="panel-heading">
-      <div>
-        <p class="eyebrow">New evaluation</p>
-        <h2>Sample body photos + production-ready products</h2>
+      <div class="panel-heading">
+        <div>
+          <p class="eyebrow">New evaluation</p>
+          <h2>Sample body photos + production-ready products</h2>
+          <p class="muted">{{ selectedProducts.length }}/5 products selected, {{ sampleImages.length }}/20 samples selected.</p>
+        </div>
+        <StatusPill :value="provider" />
       </div>
-      <StatusPill :value="provider" />
-    </div>
     <form @submit.prevent="createEvaluation">
       <div class="form-grid">
         <label>Provider
@@ -113,6 +119,7 @@ onMounted(load)
           <small>{{ product.sku }} - {{ product.readiness?.label || 'AI Candidate' }}</small>
         </button>
       </div>
+      <p v-if="!loading && !products.length" class="muted">No AI candidate products are available. Finish product images, cutouts, QA, and sizing first.</p>
 
       <div class="form-actions">
         <button class="btn btn-primary" :disabled="saving || !selectedProducts.length || !sampleImages.length">
@@ -129,6 +136,7 @@ onMounted(load)
           <p class="eyebrow">{{ evaluation.provider }}</p>
           <h2>{{ evaluation.item_count }} generated comparisons</h2>
           <p class="muted">{{ evaluation.completed_count }}/{{ evaluation.item_count }} complete - usable rate {{ evaluation.usable_rate ?? '-' }}%</p>
+          <p class="muted">{{ evaluation.production_gate_passed ? 'Provider gate passed for this evaluation.' : 'Provider gate needs at least 70% usable or good ratings.' }}</p>
         </div>
         <StatusPill :value="evaluation.status" />
       </div>

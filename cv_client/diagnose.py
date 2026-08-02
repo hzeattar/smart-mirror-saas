@@ -21,9 +21,11 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("--camera-backend", choices=["auto", "dshow", "msmf", "any"], default="auto")
     command.add_argument("--scan-cameras", action="store_true")
     command.add_argument("--scan-max-camera", type=int, default=5)
-    command.add_argument("--width", type=int, default=1280)
-    command.add_argument("--height", type=int, default=720)
+    command.add_argument("--width", type=int, default=640)
+    command.add_argument("--height", type=int, default=360)
     command.add_argument("--frames", type=int, default=90)
+    command.add_argument("--pose-every-n", type=int, default=3, help="Run pose detection every N frames.")
+    command.add_argument("--hand-every-n", type=int, default=3, help="Run hand detection every N frames.")
     command.add_argument("--pose-model", default=str(base / "models" / "pose_landmarker_lite.task"))
     command.add_argument("--hand-model", default=str(base / "models" / "hand_landmarker.task"))
     command.add_argument("--preview", action=argparse.BooleanOptionalAction, default=True)
@@ -52,6 +54,7 @@ def run(args: argparse.Namespace) -> int:
         "opencv": cv2.__version__,
         "mediapipe": getattr(mp, "__version__", "unknown"),
         "camera": {"index": args.camera, "backend": args.camera_backend},
+        "runtime": {"pose_every_n": max(1, args.pose_every_n), "hand_every_n": max(1, args.hand_every_n)},
         "checks": [],
     }
     print("Smart Mirror Phase 1 diagnostics")
@@ -104,6 +107,8 @@ def run(args: argparse.Namespace) -> int:
 
     width = int(camera.get(cv2.CAP_PROP_FRAME_WIDTH)) or args.width
     height = int(camera.get(cv2.CAP_PROP_FRAME_HEIGHT)) or args.height
+    report["camera"].update({"width": width, "height": height})
+    print(f"[INFO] Actual camera resolution: {width}x{height}")
     pose_tracker = PoseTracker(pose_model, width, height)
     hand_tracker = HandTracker(hand_model)
     print("[PASS] Pose and hand trackers initialized")
@@ -112,6 +117,8 @@ def run(args: argparse.Namespace) -> int:
     estimated_hip_frames = 0
     hand_frames = 0
     read_frames = 0
+    pose_detection_calls = 0
+    hand_detection_calls = 0
     started = time.monotonic()
 
     try:
@@ -123,8 +130,14 @@ def run(args: argparse.Namespace) -> int:
             read_frames += 1
             frame = cv2.flip(frame, 1)
             timestamp_ms = int((time.monotonic() - started) * 1000)
-            pose = pose_tracker.detect(frame, timestamp_ms)
-            hands = hand_tracker.detect(frame, timestamp_ms)
+            pose = None
+            hands = []
+            if read_frames % max(1, args.pose_every_n) == 0:
+                pose_detection_calls += 1
+                pose = pose_tracker.detect(frame, timestamp_ms)
+            if read_frames % max(1, args.hand_every_n) == 0:
+                hand_detection_calls += 1
+                hands = hand_tracker.detect(frame, timestamp_ms)
 
             if pose is not None:
                 pose_frames += 1
@@ -166,9 +179,14 @@ def run(args: argparse.Namespace) -> int:
         cv2.destroyAllWindows()
 
     check(read_frames > 0, f"Camera delivered {read_frames} frames", "Camera opened but returned no frames")
-    print(f"[INFO] Pose detected in {pose_frames}/{read_frames} frames")
+    elapsed_seconds = max(time.monotonic() - started, 0.001)
+    effective_fps = read_frames / elapsed_seconds
+    pose_rate = pose_frames / max(1, pose_detection_calls)
+    hand_rate = hand_frames / max(1, hand_detection_calls)
+    print(f"[INFO] Pose detected in {pose_frames}/{pose_detection_calls} checked frames")
     print(f"[INFO] Upper-body fallback used in {estimated_hip_frames}/{max(1, pose_frames)} pose frames")
-    print(f"[INFO] Hands detected in {hand_frames}/{read_frames} frames")
+    print(f"[INFO] Hands detected in {hand_frames}/{hand_detection_calls} checked frames")
+    print(f"[INFO] Effective FPS: {effective_fps:.1f}")
 
     if pose_frames == 0:
         print("[WARN] No pose detected. Keep both shoulders visible, improve front lighting, and avoid backlighting.")
@@ -182,8 +200,14 @@ def run(args: argparse.Namespace) -> int:
         {
             "read_frames": read_frames,
             "pose_frames": pose_frames,
+            "pose_detection_calls": pose_detection_calls,
             "estimated_hip_frames": estimated_hip_frames,
             "hand_frames": hand_frames,
+            "hand_detection_calls": hand_detection_calls,
+            "duration_seconds": round(elapsed_seconds, 3),
+            "effective_fps": round(effective_fps, 2),
+            "pose_detection_rate": round(pose_rate, 3),
+            "hand_detection_rate": round(hand_rate, 3),
         }
     )
     report["checks"].append({"name": "runtime", "status": "pass"})

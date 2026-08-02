@@ -34,8 +34,10 @@ cv_client\run_kiosk.ps1
 Equivalent direct command:
 
 ```bash
-python main.py --api-url https://YOUR-RAILWAY-DOMAIN --camera 0 --camera-backend dshow --ai-tryon --experience hybrid --hybrid-auto-start --kiosk-health-hud
+python main.py --api-url https://YOUR-RAILWAY-DOMAIN --camera 0 --camera-backend dshow --width 640 --height 360 --ai-tryon --experience hybrid --hybrid-auto-start --kiosk-health-hud
 ```
+
+The Windows kiosk defaults to `640x360` with pose and hand detection every 3 frames to keep the camera loop around 20 FPS on webcams that drop to low FPS at `1280x720` over DirectShow. Use `--width 960 --height 540` when visual quality is more important than latency.
 
 Local texture mode:
 

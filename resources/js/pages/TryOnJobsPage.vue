@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 import api, { errorMessage } from '../lib/api'
 import PageHeader from '../components/PageHeader.vue'
 import StatusPill from '../components/StatusPill.vue'
@@ -9,6 +9,8 @@ const batches = ref([])
 const loading = ref(false)
 const error = ref('')
 const filters = ref({ status: '', provider: '', mirror_id: '', date_from: '', date_to: '' })
+const refreshedAt = ref(null)
+let timer = null
 
 function params() {
   return Object.fromEntries(Object.entries(filters.value).filter(([, value]) => value !== ''))
@@ -23,6 +25,7 @@ async function load() {
     ])
     batches.value = batchResponse.data.data
     jobs.value = jobResponse.data.data
+    refreshedAt.value = new Date()
   } catch (exception) {
     error.value = errorMessage(exception)
   } finally {
@@ -32,20 +35,27 @@ async function load() {
 
 onMounted(() => {
   load()
-  setInterval(load, 10000)
+  timer = setInterval(load, 10000)
+})
+
+onBeforeUnmount(() => {
+  clearInterval(timer)
 })
 </script>
 
 <template>
-  <PageHeader eyebrow="AI" title="Try-on jobs" description="Generated fitting-room results from smart mirrors." />
+  <PageHeader eyebrow="AI" title="Try-on jobs" description="Generated fitting-room results from smart mirrors.">
+    <button class="btn btn-secondary" :disabled="loading" @click="load">{{ loading ? 'Refreshing...' : 'Refresh' }}</button>
+  </PageHeader>
   <p v-if="error" class="form-error">{{ error }}</p>
+  <p v-if="refreshedAt" class="muted page-note">Last refreshed {{ refreshedAt.toLocaleTimeString() }}</p>
   <section class="filter-panel">
     <select v-model="filters.status" @change="load"><option value="">All statuses</option><option value="queued">Queued</option><option value="processing">Processing</option><option value="completed">Completed</option><option value="failed">Failed</option></select>
     <select v-model="filters.provider" @change="load"><option value="">All providers</option><option value="mock">Mock</option><option value="nvidia">NVIDIA</option></select>
     <input v-model="filters.mirror_id" type="number" placeholder="Mirror ID" @change="load">
     <input v-model="filters.date_from" type="date" @change="load">
     <input v-model="filters.date_to" type="date" @change="load">
-    <button class="btn btn-secondary" @click="load">Refresh</button>
+    <button class="btn btn-secondary" :disabled="loading" @click="load">Apply filters</button>
   </section>
   <section class="table-panel">
     <div class="section-heading">

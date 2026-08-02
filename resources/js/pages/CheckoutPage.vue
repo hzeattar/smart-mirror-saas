@@ -1,13 +1,114 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import api,{errorMessage} from '../lib/api'
-const route=useRoute(),session=ref(null),order=ref(null),loading=ref(true),saving=ref(false),error=ref('')
-const form=reactive({customer_name:'',customer_phone:'',customer_email:'',delivery_address:'',notes:''})
-const total=computed(()=>session.value?.items.reduce((sum,i)=>sum+Number(i.unit_price)*i.quantity,0)||0)
-onMounted(async()=>{try{session.value=(await api.get(`/checkout/${route.params.token}`)).data.session}catch(e){error.value=errorMessage(e)}finally{loading.value=false}})
-async function submit(){saving.value=true;error.value='';try{order.value=(await api.post(`/checkout/${route.params.token}/orders`,{...form,type:session.value.type,items:session.value.items})).data.order}catch(e){error.value=errorMessage(e)}finally{saving.value=false}}
+import api, { errorMessage } from '../lib/api'
+
+const route = useRoute()
+const session = ref(null)
+const order = ref(null)
+const loading = ref(true)
+const saving = ref(false)
+const error = ref('')
+
+const form = reactive({
+  customer_name: '',
+  customer_phone: '',
+  customer_email: '',
+  delivery_address: '',
+  notes: '',
+})
+
+const total = computed(() => session.value?.items.reduce((sum, item) => sum + Number(item.unit_price) * item.quantity, 0) || 0)
+
+onMounted(async () => {
+  try {
+    session.value = (await api.get(`/checkout/${route.params.token}`)).data.session
+  } catch (exception) {
+    error.value = errorMessage(exception)
+  } finally {
+    loading.value = false
+  }
+})
+
+async function submit() {
+  saving.value = true
+  error.value = ''
+  try {
+    order.value = (await api.post(`/checkout/${route.params.token}/orders`, {
+      ...form,
+      type: session.value.type,
+      items: session.value.items,
+    })).data.order
+  } catch (exception) {
+    error.value = errorMessage(exception)
+  } finally {
+    saving.value = false
+  }
+}
 </script>
+
 <template>
-  <div class="checkout-page"><div class="checkout-shell"><div class="checkout-brand"><span class="brand-mark">SM</span><div><strong>{{session?.tenant_name||'Smart Mirror'}}</strong><small>Secure fitting-room checkout</small></div></div><div v-if="loading" class="panel">Loading checkout…</div><div v-else-if="order" class="checkout-success"><div class="success-icon">✓</div><p class="eyebrow">Request received</p><h1>{{order.order_number}}</h1><p>Store staff have been notified. Your current status is <strong>{{order.status}}</strong>.</p><div class="receipt-total">{{Number(order.total).toLocaleString('ar-EG')}} {{order.currency}}</div></div><template v-else-if="session"><header><p class="eyebrow">{{session.mirror_location}}</p><h1>Complete your request</h1><p>Choose in-store pickup or enter delivery details configured by the mirror.</p></header><div class="checkout-grid"><section class="panel cart-list"><h2>Your items</h2><article v-for="item in session.items" :key="item.product_id"><img v-if="item.image_url" :src="item.image_url"><div><strong>{{item.name}}</strong><small>{{item.size_label||'Standard size'}} · Qty {{item.quantity}}</small></div><b>{{Number(item.unit_price*item.quantity).toLocaleString('ar-EG')}} {{item.currency}}</b></article><div class="receipt-total"><span>Total</span><strong>{{total.toLocaleString('ar-EG')}} {{session.items[0]?.currency}}</strong></div></section><form class="panel" @submit.prevent="submit"><h2>Customer details</h2><label>Name<input v-model="form.customer_name" required></label><label>Phone<input v-model="form.customer_phone" required></label><label>Email (optional)<input v-model="form.customer_email" type="email"></label><label v-if="session.type==='delivery'">Delivery address<textarea v-model="form.delivery_address" required rows="3"></textarea></label><label>Notes<textarea v-model="form.notes" rows="2"></textarea></label><p v-if="error" class="form-error">{{error}}</p><button class="btn btn-primary btn-wide" :disabled="saving">{{saving?'Submitting…':'Send request to store'}}</button></form></div></template><div v-else class="panel"><h2>Checkout unavailable</h2><p class="form-error">{{error}}</p></div></div></div>
+  <div class="checkout-page">
+    <div class="checkout-shell">
+      <div class="checkout-brand">
+        <span class="brand-mark">SM</span>
+        <div>
+          <strong>{{ session?.tenant_name || 'Smart Mirror' }}</strong>
+          <small>Secure fitting-room checkout</small>
+        </div>
+      </div>
+
+      <div v-if="loading" class="panel">Loading checkout...</div>
+
+      <div v-else-if="order" class="checkout-success">
+        <div class="success-icon">OK</div>
+        <p class="eyebrow">Request received</p>
+        <h1>{{ order.order_number }}</h1>
+        <p>Store staff have been notified. Your current status is <strong>{{ order.status }}</strong>.</p>
+        <div class="receipt-total">{{ Number(order.total).toLocaleString('ar-EG') }} {{ order.currency }}</div>
+      </div>
+
+      <template v-else-if="session">
+        <header>
+          <p class="eyebrow">{{ session.mirror_location }}</p>
+          <h1>Complete your request</h1>
+          <p>Choose in-store pickup or enter delivery details configured by the mirror.</p>
+        </header>
+
+        <div class="checkout-grid">
+          <section class="panel cart-list">
+            <h2>Your items</h2>
+            <article v-for="item in session.items" :key="item.product_id">
+              <img v-if="item.image_url" :src="item.image_url" :alt="item.name">
+              <div>
+                <strong>{{ item.name }}</strong>
+                <small>{{ item.size_label || 'Standard size' }} - Qty {{ item.quantity }}</small>
+              </div>
+              <b>{{ Number(item.unit_price * item.quantity).toLocaleString('ar-EG') }} {{ item.currency }}</b>
+            </article>
+            <div class="receipt-total">
+              <span>Total</span>
+              <strong>{{ total.toLocaleString('ar-EG') }} {{ session.items[0]?.currency }}</strong>
+            </div>
+          </section>
+
+          <form class="panel" @submit.prevent="submit">
+            <h2>Customer details</h2>
+            <label>Name<input v-model="form.customer_name" required></label>
+            <label>Phone<input v-model="form.customer_phone" required></label>
+            <label>Email (optional)<input v-model="form.customer_email" type="email"></label>
+            <label v-if="session.type === 'delivery'">Delivery address<textarea v-model="form.delivery_address" required rows="3"></textarea></label>
+            <label>Notes<textarea v-model="form.notes" rows="2"></textarea></label>
+            <p v-if="error" class="form-error">{{ error }}</p>
+            <button class="btn btn-primary btn-wide" :disabled="saving">{{ saving ? 'Submitting...' : 'Send request to store' }}</button>
+          </form>
+        </div>
+      </template>
+
+      <div v-else class="panel">
+        <h2>Checkout unavailable</h2>
+        <p class="form-error">{{ error }}</p>
+      </div>
+    </div>
+  </div>
 </template>

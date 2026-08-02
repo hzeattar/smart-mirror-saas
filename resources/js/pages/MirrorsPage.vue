@@ -11,6 +11,8 @@ const success = ref('')
 const created = ref(null)
 const editing = ref(null)
 const savingProfile = ref(false)
+const loading = ref(false)
+const refreshedAt = ref(null)
 
 const profileForm = reactive({
   experience_mode: 'hybrid',
@@ -20,8 +22,8 @@ const profileForm = reactive({
   capture_duration_seconds: 2,
   gallery_timeout_seconds: 45,
   poll_interval_seconds: 2.5,
-  pose_every_n: 2,
-  hand_every_n: 2,
+  pose_every_n: 3,
+  hand_every_n: 3,
   kiosk_health_hud: true,
   gestures: {
     cooldown_seconds: 1.1,
@@ -33,10 +35,15 @@ const profileForm = reactive({
 const hasMirrors = computed(() => mirrors.value.length > 0)
 
 async function load() {
+  loading.value = true
+  error.value = ''
   try {
     mirrors.value = (await api.get('/admin/mirrors')).data.mirrors
+    refreshedAt.value = new Date()
   } catch (exception) {
     error.value = errorMessage(exception)
+  } finally {
+    loading.value = false
   }
 }
 
@@ -77,8 +84,8 @@ function startEdit(mirror) {
     capture_duration_seconds: Number(config.capture_duration_seconds || 2),
     gallery_timeout_seconds: Number(config.gallery_timeout_seconds || 45),
     poll_interval_seconds: Number(config.poll_interval_seconds || 2.5),
-    pose_every_n: Number(config.pose_every_n || 2),
-    hand_every_n: Number(config.hand_every_n || 2),
+    pose_every_n: Number(config.pose_every_n || 3),
+    hand_every_n: Number(config.hand_every_n || 3),
     kiosk_health_hud: config.kiosk_health_hud !== false,
     gestures: {
       cooldown_seconds: Number(config.gestures?.cooldown_seconds || 1.1),
@@ -113,10 +120,13 @@ onMounted(load)
 </script>
 
 <template>
-  <PageHeader eyebrow="Pilot control" title="Store mirror control center" description="Monitor camera health, AI status, telemetry, and remote kiosk profiles for each mirror." />
+  <PageHeader eyebrow="Pilot control" title="Store mirror control center" description="Monitor camera health, AI status, telemetry, and remote kiosk profiles for each mirror.">
+    <button class="btn btn-secondary" :disabled="loading" @click="load">{{ loading ? 'Refreshing...' : 'Refresh' }}</button>
+  </PageHeader>
 
   <p v-if="error" class="form-error">{{ error }}</p>
   <p v-if="success" class="form-success">{{ success }}</p>
+  <p v-if="refreshedAt" class="muted page-note">Last refreshed {{ refreshedAt.toLocaleTimeString() }}</p>
 
   <section class="split-grid mirror-setup">
     <form class="panel" @submit.prevent="create">
@@ -155,6 +165,10 @@ onMounted(load)
         <div><span>FPS</span><strong>{{ mirror.health?.last_fps || '-' }}</strong></div>
         <div><span>Last gesture/event</span><strong>{{ mirror.health?.last_event || mirror.latest_session_event?.event || '-' }}</strong></div>
         <div><span>Profile version</span><strong>v{{ mirror.kiosk_profile?.version || 1 }}</strong></div>
+        <div><span>Last telemetry</span><strong>{{ dateTime(mirror.health?.last_event_at || mirror.latest_session_event?.occurred_at) }}</strong></div>
+        <div><span>Health severity</span><strong>{{ mirror.health?.severity || 'info' }}</strong></div>
+        <div><span>Camera</span><strong>{{ mirror.health?.badges?.includes('No Camera') ? 'Check camera' : 'No error' }}</strong></div>
+        <div><span>Profile mode</span><strong>{{ mirror.kiosk_profile?.config?.experience_mode || 'hybrid' }}</strong></div>
       </div>
 
       <div class="ops-grid">
