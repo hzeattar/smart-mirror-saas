@@ -40,6 +40,7 @@ fi
 
 # Railpack may cache config during the image build. Clear it before reading
 # runtime Railway variables or running migrations.
+rm -f bootstrap/cache/*.php
 CACHE_STORE=file php artisan optimize:clear || true
 
 prepare_sqlite() {
