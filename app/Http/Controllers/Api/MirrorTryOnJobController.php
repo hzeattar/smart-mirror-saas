@@ -9,12 +9,15 @@ use App\Models\Mirror;
 use App\Models\Product;
 use App\Models\SizingChart;
 use App\Models\TryOnJob;
+use App\Services\ProductReadinessService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 
 class MirrorTryOnJobController extends Controller
 {
+    public function __construct(private readonly ProductReadinessService $readiness) {}
+
     public function store(Request $request): JsonResponse
     {
         $data = $request->validate([
@@ -29,6 +32,7 @@ class MirrorTryOnJobController extends Controller
             ->forTenant($mirror->tenant_id)
             ->whereKey($data['product_id'])
             ->firstOrFail();
+        abort_unless($this->readiness->availableForMirror($product), 422, 'Product is not production-ready for the mirror.');
 
         if (isset($data['sizing_chart_id'])) {
             abort_unless(

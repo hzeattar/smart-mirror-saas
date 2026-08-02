@@ -53,7 +53,11 @@ class SmartMirrorAppV2(SmartMirrorApp):
         self._last_hands = []
         self._preview_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="preview")
         self._preview_futures = {}
+        self.kiosk_profile_version = 0
+        self._last_kiosk_config_check_at = 0.0
+        self.offline_mode = False
         self.kiosk_config = {
+            "experience_mode": self.experience,
             "outfit_count": 3,
             "auto_start_delay_seconds": 1.5,
             "capture_burst_count": 5,
@@ -62,6 +66,7 @@ class SmartMirrorAppV2(SmartMirrorApp):
             "poll_interval_seconds": 2.5,
             "pose_every_n": int(getattr(args, "pose_every_n", 2)),
             "hand_every_n": int(getattr(args, "hand_every_n", 2)),
+            "kiosk_health_hud": bool(getattr(args, "kiosk_health_hud", True)),
         }
 
     def _neighbour_name(self, delta: int) -> str:
@@ -86,14 +91,21 @@ class SmartMirrorAppV2(SmartMirrorApp):
         super().change_product(delta)
         self.session_log.event("product_changed", product_id=self.product.id, product_name=self.product.name)
 
-    def _load_kiosk_config(self) -> None:
+    def _load_kiosk_config(self, force: bool = False) -> bool:
         if not self.api:
-            return
+            return False
         try:
-            config = self.api.kiosk_config()
+            profile = self.api.kiosk_profile()
         except Exception as exc:
             print(f"Kiosk config warning: {exc}")
-            return
+            self.offline_mode = True
+            self.session_log.event("api_error", severity="warning", source="kiosk_config", error=str(exc))
+            return False
+
+        config = dict(profile.get("config") or {})
+        version = int(profile.get("profile_version") or profile.get("version") or 1)
+        if not force and version == self.kiosk_profile_version:
+            return False
 
         for key in self.kiosk_config:
             if key in config:
@@ -102,7 +114,37 @@ class SmartMirrorAppV2(SmartMirrorApp):
         self.args.gesture_cooldown = float(gestures.get("cooldown_seconds", getattr(self.args, "gesture_cooldown", 1.10)))
         self.args.gesture_hold = float(gestures.get("hold_seconds", getattr(self.args, "gesture_hold", 0.75)))
         self.args.swipe_distance = float(gestures.get("swipe_distance", getattr(self.args, "swipe_distance", 0.20)))
-        self.session_log.event("kiosk_config_loaded", config=self.kiosk_config)
+        self.args.kiosk_health_hud = bool(self.kiosk_config.get("kiosk_health_hud", getattr(self.args, "kiosk_health_hud", True)))
+        mode = str(self.kiosk_config.get("experience_mode") or self.experience).lower()
+        if mode in {"hybrid", "live"} and mode != self.experience:
+            self.experience = mode
+            if mode == "hybrid" and self.hybrid is None:
+                self.hybrid = HybridState()
+            elif mode == "live":
+                self.hybrid = None
+        self.kiosk_profile_version = version
+        self.offline_mode = bool(getattr(self.api, "last_offline_error", ""))
+        self.session_log.event(
+            "kiosk_config_loaded",
+            config=self.kiosk_config,
+            profile_version=self.kiosk_profile_version,
+            offline=self.offline_mode,
+        )
+        return True
+
+    def _refresh_kiosk_config(self, now: float) -> None:
+        if not self.api or now - self._last_kiosk_config_check_at < 20.0:
+            return
+        self._last_kiosk_config_check_at = now
+        self._load_kiosk_config(force=False)
+
+    def _configure_gesture_engine(self, gesture_engine: GestureEngine | None) -> None:
+        if not gesture_engine:
+            return
+        gesture_engine.cooldown_seconds = max(0.30, float(getattr(self.args, "gesture_cooldown", 1.10)))
+        gesture_engine.hold_seconds = max(0.35, float(getattr(self.args, "gesture_hold", 0.75)))
+        gesture_engine.swipe_distance = max(0.10, min(0.50, float(getattr(self.args, "swipe_distance", 0.20))))
+        gesture_engine.mode = self.experience
 
     def _cfg_float(self, key: str, default: float) -> float:
         try:
@@ -165,7 +207,8 @@ class SmartMirrorAppV2(SmartMirrorApp):
             self.ai_tryon.error = str(exc)
             self.snapshot_message = "AI TRY-ON FAILED"
             self.snapshot_message_until = now + 2.5
-            self.session_log.event("ai_tryon_error", error=str(exc), product_id=self.product.id)
+            self.offline_mode = True
+            self.session_log.event("api_error", severity="error", source="ai_tryon_create", error=str(exc), product_id=self.product.id)
 
     def _poll_ai_tryon(self, now: float) -> None:
         if not self.ai_tryon.enabled or not self.ai_tryon.active or not self.ai_tryon.job_id or not self.api:
@@ -195,7 +238,8 @@ class SmartMirrorAppV2(SmartMirrorApp):
                 self.snapshot_message = "AI TRY-ON FAILED"
                 self.snapshot_message_until = now + 3.0
         except Exception as exc:
-            self.session_log.event("ai_tryon_poll_error", job_id=self.ai_tryon.job_id, error=str(exc))
+            self.offline_mode = True
+            self.session_log.event("api_error", severity="warning", source="ai_tryon_poll", job_id=self.ai_tryon.job_id, error=str(exc))
 
     def _hybrid_outfit_products(self, count: int = 3) -> list:
         if not self.products:
@@ -237,7 +281,7 @@ class SmartMirrorAppV2(SmartMirrorApp):
         self.hybrid.burst.clear()
         self.hybrid.target_burst_count = self._cfg_int("capture_burst_count", 5)
         self.hybrid.capture_started_at = now
-        self.session_log.event("hybrid_capture_started", product_id=self.product.id, product_name=self.product.name)
+        self.session_log.event("capture_started", product_id=self.product.id, product_name=self.product.name)
 
     def _submit_hybrid_batch(self, selected_size: dict | None, now: float) -> None:
         if not self.hybrid:
@@ -246,11 +290,18 @@ class SmartMirrorAppV2(SmartMirrorApp):
         if best is None:
             self.hybrid.mode = "idle_attractor"
             self.hybrid.message = "CAPTURE FAILED"
+            self.session_log.event("capture_failed", severity="warning", product_id=self.product.id)
             return
         try:
             snapshot_path = save_hybrid_snapshot(best, Path(self.args.data_dir) / "hybrid-inputs")
             products = self._hybrid_outfit_products(self._cfg_int("outfit_count", 3))
             batch = self.api.create_try_on_batch(products, snapshot_path, self._selected_size_id(selected_size))
+            self.session_log.event(
+                "capture_completed",
+                burst_count=len(self.hybrid.burst),
+                best_score=round(float(best.score), 4),
+                snapshot_path=str(snapshot_path),
+            )
             self.hybrid.mode = "generating"
             self.hybrid.status = str(batch.get("status") or "queued")
             self.hybrid.batch_id = str(batch.get("id") or "")
@@ -260,7 +311,7 @@ class SmartMirrorAppV2(SmartMirrorApp):
             self.hybrid.gallery_started_at = 0.0
             self.hybrid.message = "AI PROCESSING"
             self.session_log.event(
-                "hybrid_batch_created",
+                "batch_created",
                 batch_id=self.hybrid.batch_id,
                 product_ids=[product.id for product in products],
                 status=self.hybrid.status,
@@ -271,7 +322,8 @@ class SmartMirrorAppV2(SmartMirrorApp):
             self.hybrid.message = "AI FAILED"
             self.snapshot_message = "AI BATCH FAILED"
             self.snapshot_message_until = now + 3.0
-            self.session_log.event("hybrid_batch_error", error=str(exc), product_id=self.product.id)
+            self.offline_mode = True
+            self.session_log.event("batch_failed", severity="error", error=str(exc), product_id=self.product.id)
 
     def _poll_hybrid_batch(self, now: float) -> None:
         if not self.hybrid or not self.hybrid.batch_id or not self.api:
@@ -298,13 +350,14 @@ class SmartMirrorAppV2(SmartMirrorApp):
                 self.hybrid.message = "AI FAILED"
             if self.hybrid.status != old_status:
                 self.session_log.event(
-                    "hybrid_batch_status",
+                    "batch_completed" if self.hybrid.status == "completed" else ("batch_failed" if self.hybrid.status == "failed" else "batch_status"),
                     batch_id=self.hybrid.batch_id,
                     status=self.hybrid.status,
                     ready=len(ready),
                 )
         except Exception as exc:
-            self.session_log.event("hybrid_batch_poll_error", batch_id=self.hybrid.batch_id, error=str(exc))
+            self.offline_mode = True
+            self.session_log.event("api_error", severity="warning", source="batch_poll", batch_id=self.hybrid.batch_id, error=str(exc))
 
     def _preload_hybrid_preview(self) -> None:
         if not self.hybrid or not self.api:
@@ -377,6 +430,8 @@ class SmartMirrorAppV2(SmartMirrorApp):
         if elapsed >= 5.0:
             self._current_fps = round(self._frame_count / elapsed, 2)
             self.session_log.event("runtime", fps=self._current_fps, product_id=self.product.id)
+            if 0 < self._current_fps < 15:
+                self.session_log.event("low_fps", severity="warning", fps=self._current_fps, product_id=self.product.id)
             self._frame_count = 0
             self._fps_started_at = now
 
@@ -389,8 +444,11 @@ class SmartMirrorAppV2(SmartMirrorApp):
         try:
             self.api.session_events(rows)
             self._last_session_upload_at = now
+            self.offline_mode = False
         except Exception as exc:
             self.session_log.restore_remote(rows[-60:])
+            self.offline_mode = True
+            self.session_log.event("api_error", severity="warning", source="session_events", error=str(exc))
             print(f"Session telemetry warning: {exc}")
 
     def _render_current_garment(self, frame, pose, selected_size: dict | None):
@@ -432,13 +490,22 @@ class SmartMirrorAppV2(SmartMirrorApp):
 
     def run(self) -> None:
         self.setup_catalog()
-        self._load_kiosk_config()
-        camera, camera_backend = open_camera(
-            self.args.camera,
-            self.args.width,
-            self.args.height,
-            getattr(self.args, "camera_backend", "auto"),
-        )
+        if self.api and getattr(self.api, "last_offline_error", ""):
+            self.offline_mode = True
+            self.snapshot_message = "OFFLINE MODE"
+            self.snapshot_message_until = time.monotonic() + 4.0
+            self.session_log.event("api_error", severity="warning", source="catalog", error=self.api.last_offline_error)
+        self._load_kiosk_config(force=True)
+        try:
+            camera, camera_backend = open_camera(
+                self.args.camera,
+                self.args.width,
+                self.args.height,
+                getattr(self.args, "camera_backend", "auto"),
+            )
+        except Exception as exc:
+            self.session_log.event("camera_error", severity="error", camera=self.args.camera, error=str(exc))
+            raise
         print(f"Opened camera {self.args.camera} using {camera_backend} backend")
 
         width = int(camera.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -456,6 +523,7 @@ class SmartMirrorAppV2(SmartMirrorApp):
             if hand_tracker
             else None
         )
+        self._configure_gesture_engine(gesture_engine)
         hand_cursor = HandCursor() if hand_tracker else None
         last_heartbeat = 0.0
 
@@ -475,6 +543,8 @@ class SmartMirrorAppV2(SmartMirrorApp):
                 self._loop_frame_index += 1
                 self._log_fps(now)
                 self._flush_session_events(now)
+                self._refresh_kiosk_config(now)
+                self._configure_gesture_engine(gesture_engine)
                 timestamp_ms = int(now * 1000)
                 self._poll_ai_tryon(now)
                 self._poll_hybrid_batch(now)
@@ -495,6 +565,7 @@ class SmartMirrorAppV2(SmartMirrorApp):
                 pending_snapshot = False
                 if self.gesture_status.event:
                     action = self.gesture_status.event.action
+                    self.session_log.event("gesture_detected", gesture=action, confidence=self.gesture_status.progress)
                     if self.hybrid and action in {"start_capture", "next", "previous", "confirm", "back"}:
                         pass
                     elif action == "snapshot":
@@ -610,7 +681,7 @@ class SmartMirrorAppV2(SmartMirrorApp):
                         gesture_label=gesture_label,
                         gesture_progress=gesture_progress,
                         controls_visible=self.controls_visible,
-                        snapshot_message=self.snapshot_message,
+                        snapshot_message=self.snapshot_message or ("OFFLINE MODE" if self.offline_mode else ""),
                         cursor_visible=self.cursor_state.visible,
                         cursor_x=self.cursor_state.x,
                         cursor_y=self.cursor_state.y,
@@ -679,7 +750,10 @@ class SmartMirrorAppV2(SmartMirrorApp):
                 if self.api and now - last_heartbeat > 30:
                     try:
                         self.api.heartbeat()
+                        self.offline_mode = False
                     except Exception as exc:
+                        self.offline_mode = True
+                        self.session_log.event("api_error", severity="warning", source="heartbeat", error=str(exc))
                         print(f"Heartbeat warning: {exc}")
                     last_heartbeat = now
         finally:

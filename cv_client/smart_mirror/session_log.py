@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -10,17 +11,23 @@ class SessionLogger:
         self.enabled = enabled
         self.path: Path | None = None
         self._pending_remote: list[dict] = []
+        self.session_id = uuid.uuid4().hex
+        self.sequence = 0
         if enabled:
             log_dir = Path(data_dir) / "logs"
             log_dir.mkdir(parents=True, exist_ok=True)
             stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
             self.path = log_dir / f"session-{stamp}.jsonl"
 
-    def event(self, name: str, **payload) -> dict | None:
+    def event(self, name: str, severity: str = "info", **payload) -> dict | None:
         if not self.enabled or self.path is None:
             return None
+        self.sequence += 1
         row = {
             "ts": datetime.now(timezone.utc).isoformat(),
+            "session_id": self.session_id,
+            "sequence": self.sequence,
+            "severity": severity,
             "event": name,
             **payload,
         }

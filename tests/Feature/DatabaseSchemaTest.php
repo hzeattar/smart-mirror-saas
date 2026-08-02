@@ -21,6 +21,10 @@ class DatabaseSchemaTest extends TestCase
             'orders',
             'order_items',
             'try_on_jobs',
+            'try_on_batches',
+            'mirror_session_events',
+            'ai_evaluations',
+            'ai_evaluation_items',
         ] as $table) {
             $this->assertTrue(Schema::hasTable($table), "Missing table: {$table}");
         }
@@ -84,6 +88,40 @@ class DatabaseSchemaTest extends TestCase
             'input_image_path',
             'result_image_path',
             'expires_at',
+        ]));
+    }
+
+    public function test_pilot_control_columns_exist(): void
+    {
+        $this->assertTrue(Schema::hasColumns('mirror_session_events', [
+            'tenant_id',
+            'mirror_id',
+            'session_id',
+            'sequence',
+            'severity',
+            'event',
+            'fps',
+            'payload',
+        ]));
+        $this->assertTrue(Schema::hasColumns('ai_evaluations', [
+            'public_id',
+            'tenant_id',
+            'mirror_id',
+            'provider',
+            'status',
+            'completed_count',
+            'failed_count',
+            'good_count',
+            'usable_count',
+            'bad_count',
+        ]));
+        $this->assertTrue(Schema::hasColumns('ai_evaluation_items', [
+            'ai_evaluation_id',
+            'try_on_job_id',
+            'product_id',
+            'sample_image_path',
+            'rating',
+            'notes',
         ]));
     }
 }

@@ -6,11 +6,14 @@ use App\Enums\ProductStatus;
 use App\Http\Controllers\Controller;
 use App\Models\Mirror;
 use App\Models\Product;
+use App\Services\ProductReadinessService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class MirrorController extends Controller
 {
+    public function __construct(private readonly ProductReadinessService $readiness) {}
+
     public function heartbeat(Request $request): JsonResponse
     {
         /** @var Mirror $mirror */
@@ -39,6 +42,8 @@ class MirrorController extends Controller
             ->with(['category:id,name,slug', 'sizingCharts'])
             ->orderBy('name')
             ->get()
+            ->filter(fn (Product $product) => $this->readiness->availableForMirror($product))
+            ->values()
             ->map(fn (Product $product) => [
                 'id' => $product->id,
                 'sku' => $product->sku,
@@ -52,6 +57,7 @@ class MirrorController extends Controller
                 'base_image_url' => $this->absoluteAssetUrl($request, $product->base_image_url),
                 'texture_image_url' => $this->absoluteAssetUrl($request, $product->texture_image_url),
                 'category' => $product->category,
+                'readiness' => $this->readiness->readiness($product),
                 'sizes' => $product->sizingCharts->map(fn ($size) => [
                     'id' => $size->id,
                     'label' => $size->size_label,

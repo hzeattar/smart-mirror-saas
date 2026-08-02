@@ -4,7 +4,8 @@ param(
     [int]$Camera = 0,
     [ValidateSet("auto", "dshow", "msmf", "any")]
     [string]$CameraBackend = "dshow",
-    [switch]$NoGestureDebug
+    [switch]$NoGestureDebug,
+    [switch]$NoRestart
 )
 
 $ErrorActionPreference = "Stop"
@@ -35,7 +36,17 @@ try {
         $Args += "--gesture-debug"
     }
 
-    & $Python @Args
+    do {
+        $startedAt = Get-Date
+        Write-Host "Starting Smart Mirror kiosk at $($startedAt.ToString('s'))"
+        & $Python @Args
+        $exitCode = $LASTEXITCODE
+        if ($exitCode -eq 0 -or $NoRestart) {
+            break
+        }
+        Write-Warning "Smart Mirror exited with code $exitCode. Restarting in 5 seconds..."
+        Start-Sleep -Seconds 5
+    } while ($true)
 } finally {
     Stop-Transcript | Out-Null
 }

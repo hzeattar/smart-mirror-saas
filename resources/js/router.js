@@ -6,6 +6,7 @@ import OrderTrackingDashboard from './pages/OrderTrackingDashboard.vue'
 import MirrorsPage from './pages/MirrorsPage.vue'
 import CheckoutPage from './pages/CheckoutPage.vue'
 import TryOnJobsPage from './pages/TryOnJobsPage.vue'
+import AiEvaluationsPage from './pages/AiEvaluationsPage.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -16,6 +17,7 @@ const router = createRouter({
     { path: '/products', component: ProductManagementPage },
     { path: '/orders', component: OrderTrackingDashboard },
     { path: '/try-on-jobs', component: TryOnJobsPage },
+    { path: '/ai-evaluations', component: AiEvaluationsPage },
     { path: '/mirrors', component: MirrorsPage },
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],

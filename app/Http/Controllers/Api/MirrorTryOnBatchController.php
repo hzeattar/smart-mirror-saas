@@ -11,6 +11,7 @@ use App\Models\Product;
 use App\Models\SizingChart;
 use App\Models\TryOnBatch;
 use App\Models\TryOnJob;
+use App\Services\ProductReadinessService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -18,6 +19,8 @@ use Illuminate\Support\Str;
 
 class MirrorTryOnBatchController extends Controller
 {
+    public function __construct(private readonly ProductReadinessService $readiness) {}
+
     public function store(Request $request): JsonResponse
     {
         $data = $request->validate([
@@ -39,6 +42,11 @@ class MirrorTryOnBatchController extends Controller
             ->values();
 
         abort_if($products->count() !== $productIds->count(), 422, 'One or more products are unavailable.');
+        abort_if(
+            $products->contains(fn (Product $product) => ! $this->readiness->availableForMirror($product)),
+            422,
+            'One or more products are not production-ready for the mirror.'
+        );
 
         $sizingChartId = isset($data['sizing_chart_id']) ? (int) $data['sizing_chart_id'] : null;
         if ($sizingChartId) {

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urljoin
@@ -50,7 +51,10 @@ class SmartMirrorApi:
         self.base_url = base_url.rstrip("/")
         self.token_file = token_file
         self.cache_dir = token_file.parent / "garment-cache"
+        self.state_dir = token_file.parent / "state-cache"
         self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self.state_dir.mkdir(parents=True, exist_ok=True)
+        self.last_offline_error = ""
         self.session = requests.Session()
         self.session.headers.update(
             {
@@ -82,17 +86,39 @@ class SmartMirrorApi:
         return data["mirror"]
 
     def catalog(self) -> list[CatalogProduct]:
-        response = self.session.get(f"{self.base_url}/api/mirror/catalog", timeout=20)
-        response.raise_for_status()
-        return [CatalogProduct.from_api(item) for item in response.json()["products"]]
+        try:
+            response = self.session.get(f"{self.base_url}/api/mirror/catalog", timeout=20)
+            response.raise_for_status()
+            payload = response.json()
+            self._write_json_cache("catalog.json", payload)
+            self.last_offline_error = ""
+        except Exception as exc:
+            payload = self._read_json_cache("catalog.json")
+            if payload is None:
+                raise
+            self.last_offline_error = str(exc)
+        return [CatalogProduct.from_api(item) for item in payload["products"]]
 
     def heartbeat(self) -> None:
         self.session.post(f"{self.base_url}/api/mirror/heartbeat", timeout=8).raise_for_status()
 
+    def kiosk_profile(self) -> dict:
+        try:
+            response = self.session.get(f"{self.base_url}/api/mirror/kiosk-config", timeout=8)
+            response.raise_for_status()
+            payload = response.json()
+            self._write_json_cache("kiosk-config.json", payload)
+            self.last_offline_error = ""
+            return dict(payload)
+        except Exception as exc:
+            payload = self._read_json_cache("kiosk-config.json")
+            if payload is None:
+                raise
+            self.last_offline_error = str(exc)
+            return dict(payload)
+
     def kiosk_config(self) -> dict:
-        response = self.session.get(f"{self.base_url}/api/mirror/kiosk-config", timeout=8)
-        response.raise_for_status()
-        return dict(response.json().get("config") or {})
+        return dict(self.kiosk_profile().get("config") or {})
 
     def session_events(self, events: list[dict]) -> None:
         if not events:
@@ -104,10 +130,16 @@ class SmartMirrorApi:
                     "event": str(event.get("event") or "runtime"),
                     "ts": event.get("ts"),
                     "fps": event.get("fps"),
-                    "payload": {key: value for key, value in event.items() if key not in {"event", "ts", "fps"}},
+                    "session_id": event.get("session_id"),
+                    "sequence": event.get("sequence"),
+                    "severity": event.get("severity"),
+                    "payload": {key: value for key, value in event.items() if key not in {"event", "ts", "fps", "session_id", "sequence", "severity"}},
                 }
             )
-        self.session.post(f"{self.base_url}/api/mirror/session-events", json={"events": payload}, timeout=8).raise_for_status()
+        body = {"events": payload}
+        if payload and payload[0].get("session_id"):
+            body["session_id"] = payload[0]["session_id"]
+        self.session.post(f"{self.base_url}/api/mirror/session-events", json=body, timeout=8).raise_for_status()
 
     def create_try_on_job(self, product: CatalogProduct, snapshot_path: Path, sizing_chart_id: int | None = None) -> dict:
         data = {"product_id": str(product.id)}
@@ -212,3 +244,13 @@ class SmartMirrorApi:
         if not cv2.imwrite(str(cache_path), prepared, [cv2.IMWRITE_PNG_COMPRESSION, 6]):
             print(f"Garment cache warning: unable to write {cache_path}")
         return prepared
+
+    def _write_json_cache(self, name: str, payload: dict) -> None:
+        cache_path = self.state_dir / name
+        cache_path.write_text(json.dumps(payload, ensure_ascii=False, default=str), encoding="utf-8")
+
+    def _read_json_cache(self, name: str) -> dict | None:
+        cache_path = self.state_dir / name
+        if not cache_path.exists():
+            return None
+        return json.loads(cache_path.read_text(encoding="utf-8"))

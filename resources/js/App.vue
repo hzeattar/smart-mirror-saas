@@ -22,18 +22,28 @@ async function signOut() {
   <router-view v-if="publicView" />
   <div v-else class="app-shell">
     <aside class="sidebar">
-      <div class="brand"><span class="brand-mark">SM</span><div><strong>Smart Mirror</strong><small>{{ auth.state.user?.tenant?.name || 'Retail OS' }}</small></div></div>
+      <div class="brand">
+        <span class="brand-mark">SM</span>
+        <div>
+          <strong>Smart Mirror</strong>
+          <small>{{ auth.state.user?.tenant?.name || 'Retail OS' }}</small>
+        </div>
+      </div>
       <nav>
-        <router-link to="/"><span>◫</span> Overview</router-link>
-        <router-link to="/products"><span>◩</span> Products</router-link>
-        <router-link to="/orders"><span>◎</span> Live orders</router-link>
+        <router-link to="/"><span>DB</span> Overview</router-link>
+        <router-link to="/products"><span>PR</span> Products</router-link>
+        <router-link to="/orders"><span>OR</span> Live orders</router-link>
         <router-link to="/try-on-jobs"><span>AI</span> Try-on jobs</router-link>
-        <router-link to="/mirrors"><span>◇</span> Mirrors</router-link>
+        <router-link to="/ai-evaluations"><span>EV</span> AI evaluations</router-link>
+        <router-link to="/mirrors"><span>MR</span> Mirrors</router-link>
       </nav>
       <div class="sidebar-footer">
         <div class="avatar">{{ auth.state.user?.name?.slice(0, 1) || 'A' }}</div>
-        <div class="user-meta"><strong>{{ auth.state.user?.name }}</strong><small>{{ auth.state.user?.role }}</small></div>
-        <button class="icon-btn" @click="signOut" title="Sign out">↗</button>
+        <div class="user-meta">
+          <strong>{{ auth.state.user?.name }}</strong>
+          <small>{{ auth.state.user?.role }}</small>
+        </div>
+        <button class="icon-btn" @click="signOut" title="Sign out">x</button>
       </div>
     </aside>
     <main class="main"><router-view /></main>

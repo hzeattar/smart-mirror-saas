@@ -5,11 +5,13 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import numpy as np
+import requests
 
 from smart_mirror.ai_tryon import AiTryOnState, make_qr_image, save_ai_snapshot
-from smart_mirror.api_client import CatalogProduct
+from smart_mirror.api_client import CatalogProduct, SmartMirrorApi
 from smart_mirror.app_v2 import SmartMirrorAppV2
 from smart_mirror.session_log import SessionLogger
 
@@ -27,8 +29,11 @@ class FakeTryOnApi:
         self.polled.append(job_id)
         return {"id": job_id, "status": "completed", "result_url": "https://example.test/result.jpg"}
 
-    def kiosk_config(self):
-        return {"outfit_count": 4, "capture_burst_count": 6, "gestures": {"hold_seconds": 0.6}}
+    def kiosk_profile(self):
+        return {
+            "profile_version": 7,
+            "config": {"outfit_count": 4, "capture_burst_count": 6, "gestures": {"hold_seconds": 0.6}},
+        }
 
 
 def args(directory: str):
@@ -61,6 +66,8 @@ class AiTryOnTests(unittest.TestCase):
             row = json.loads(next((Path(directory) / "logs").glob("session-*.jsonl")).read_text(encoding="utf-8"))
             self.assertEqual("runtime", row["event"])
             self.assertEqual(24.5, row["fps"])
+            self.assertEqual("info", row["severity"])
+            self.assertEqual(1, row["sequence"])
             drained = logger.drain_remote()
             self.assertEqual(1, len(drained))
             self.assertEqual("runtime", drained[0]["event"])
@@ -98,6 +105,30 @@ class AiTryOnTests(unittest.TestCase):
             self.assertEqual(4, app.kiosk_config["outfit_count"])
             self.assertEqual(6, app.kiosk_config["capture_burst_count"])
             self.assertEqual(0.6, app.args.gesture_hold)
+            self.assertEqual(7, app.kiosk_profile_version)
+
+    def test_api_uses_cached_catalog_when_offline(self):
+        with tempfile.TemporaryDirectory() as directory:
+            api = SmartMirrorApi("https://example.test", Path(directory) / "mirror.token")
+            api._write_json_cache(
+                "catalog.json",
+                {
+                    "products": [
+                        {
+                            "id": 4,
+                            "name": "Cached Shirt",
+                            "texture_image_url": "/texture.png",
+                            "base_image_url": "/front.png",
+                            "sizes": [],
+                        }
+                    ]
+                },
+            )
+            api.session.get = Mock(side_effect=requests.ConnectionError("offline"))
+
+            products = api.catalog()
+            self.assertEqual("Cached Shirt", products[0].name)
+            self.assertIn("offline", api.last_offline_error)
 
 
 if __name__ == "__main__":

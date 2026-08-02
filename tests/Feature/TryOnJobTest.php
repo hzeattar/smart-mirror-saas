@@ -159,7 +159,18 @@ class TryOnJobTest extends TestCase
             'currency' => 'EGP',
             'status' => ProductStatus::Active,
             'garment_type' => 'shirt',
+            'base_image_url' => '/demo-garments/real/second-front.png',
+            'texture_image_url' => '/demo-garments/real/second-texture.png',
+            'image_qa' => ['base' => ['status' => 'ok'], 'texture' => ['status' => 'ok']],
         ]);
+        foreach (['S', 'M', 'L', 'XL'] as $label) {
+            $second->sizingCharts()->create([
+                'size_label' => $label,
+                'shoulder_width_cm' => 44,
+                'chest_width_cm' => 52,
+                'height_cm' => 70,
+            ]);
+        }
 
         $response = $this->withToken($token)->post('/api/mirror/try-on-batches', [
             'product_ids' => [$product->id, $second->id],
@@ -204,6 +215,26 @@ class TryOnJobTest extends TestCase
         ]);
 
         $this->withToken($token)->getJson('/api/mirror/try-on-batches/'.$batch->public_id)->assertNotFound();
+    }
+
+    public function test_mirror_rejects_batch_products_that_are_not_catalog_ready(): void
+    {
+        Storage::fake('local');
+        config(['filesystems.default' => 'local', 'ai_tryon.provider' => 'mock']);
+
+        [$tenant, , $token] = $this->mirrorFixture();
+        $incomplete = Product::query()->create([
+            'tenant_id' => $tenant->id,
+            'name' => 'Incomplete Product',
+            'unit_price' => 100,
+            'currency' => 'EGP',
+            'status' => ProductStatus::Active,
+        ]);
+
+        $this->withToken($token)->post('/api/mirror/try-on-batches', [
+            'product_ids' => [$incomplete->id],
+            'snapshot' => UploadedFile::fake()->image('snapshot.jpg', 640, 480),
+        ])->assertUnprocessable();
     }
 
     public function test_purge_deletes_expired_batch_media_and_jobs(): void
@@ -293,9 +324,10 @@ class TryOnJobTest extends TestCase
         [$tenant, $mirror, $token] = $this->mirrorFixture();
 
         $this->withToken($token)->postJson('/api/mirror/session-events', [
+            'session_id' => 'session-1',
             'events' => [
-                ['event' => 'runtime', 'fps' => 28.4, 'payload' => ['product_id' => 123]],
-                ['event' => 'gesture', 'ts' => 1785434458.9, 'payload' => ['action' => 'start_capture']],
+                ['event' => 'runtime', 'fps' => 28.4, 'sequence' => 1, 'severity' => 'info', 'payload' => ['product_id' => 123]],
+                ['event' => 'gesture_detected', 'ts' => 1785434458.9, 'sequence' => 2, 'severity' => 'warning', 'payload' => ['action' => 'start_capture']],
             ],
         ])->assertOk()->assertJsonPath('accepted', 2);
 
@@ -303,8 +335,15 @@ class TryOnJobTest extends TestCase
             'tenant_id' => $tenant->id,
             'mirror_id' => $mirror->id,
             'event' => 'runtime',
+            'session_id' => 'session-1',
+            'sequence' => 1,
+            'severity' => 'info',
         ]);
-        $this->assertSame('gesture', $mirror->fresh()->metadata['session_health']['last_event']);
+        $health = $mirror->fresh()->metadata['session_health'];
+        $this->assertSame('gesture_detected', $health['last_event']);
+        $this->assertSame('session-1', $health['session_id']);
+        $this->assertSame('warning', $health['severity']);
+        $this->assertSame(28.4, $health['last_fps']);
     }
 
     public function test_admin_can_filter_try_on_batches_and_jobs(): void
@@ -349,6 +388,44 @@ class TryOnJobTest extends TestCase
             ->assertJsonPath('data.0.id', $job->public_id);
     }
 
+    public function test_admin_ai_evaluation_requires_auth_and_can_rate_results(): void
+    {
+        Storage::fake('local');
+        config(['filesystems.default' => 'local', 'ai_tryon.provider' => 'mock']);
+
+        [$tenant, , , $product] = $this->mirrorFixture();
+        $this->getJson('/api/admin/ai-evaluations')->assertUnauthorized();
+
+        $user = User::query()->create([
+            'tenant_id' => $tenant->id,
+            'name' => 'Admin',
+            'email' => 'eval-'.Str::random(6).'@test.local',
+            'password' => 'password',
+            'role' => UserRole::Owner,
+            'status' => UserStatus::Active,
+        ]);
+        Sanctum::actingAs($user, ['admin']);
+
+        $response = $this->post('/api/admin/ai-evaluations', [
+            'provider' => 'mock',
+            'product_ids' => [$product->id],
+            'sample_images' => [UploadedFile::fake()->image('person.jpg', 640, 900)],
+        ], ['Accept' => 'application/json'])->assertCreated();
+
+        $evaluationId = $response->json('evaluation.id');
+        $itemId = $response->json('evaluation.items.0.id');
+        $this->assertDatabaseHas('ai_evaluations', [
+            'public_id' => $evaluationId,
+            'tenant_id' => $tenant->id,
+            'item_count' => 1,
+        ]);
+
+        $this->patchJson('/api/admin/ai-evaluations/'.$evaluationId.'/items/'.$itemId, ['rating' => 'usable'])
+            ->assertOk()
+            ->assertJsonPath('evaluation.usable_count', 1)
+            ->assertJsonPath('evaluation.production_gate_passed', true);
+    }
+
     private function mirrorFixture(): array
     {
         $tenant = Tenant::query()->create(['name' => 'Store', 'domain' => Str::random(8).'.test', 'status' => TenantStatus::Active]);
@@ -367,13 +444,22 @@ class TryOnJobTest extends TestCase
             'currency' => 'EGP',
             'status' => ProductStatus::Active,
             'garment_type' => 'jacket',
+            'base_image_url' => '/demo-garments/real/jacket-front.png',
+            'texture_image_url' => '/demo-garments/real/jacket-texture.png',
+            'image_qa' => ['base' => ['status' => 'ok'], 'texture' => ['status' => 'ok']],
         ]);
-        $size = $product->sizingCharts()->create([
-            'size_label' => 'L',
-            'shoulder_width_cm' => 46,
-            'chest_width_cm' => 54,
-            'height_cm' => 72,
-        ]);
+        $size = null;
+        foreach (['S', 'M', 'L', 'XL'] as $label) {
+            $created = $product->sizingCharts()->create([
+                'size_label' => $label,
+                'shoulder_width_cm' => 46,
+                'chest_width_cm' => 54,
+                'height_cm' => 72,
+            ]);
+            if ($label === 'L') {
+                $size = $created;
+            }
+        }
 
         return [$tenant, $mirror, $token, $product, $size];
     }

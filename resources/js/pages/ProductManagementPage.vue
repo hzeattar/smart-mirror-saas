@@ -12,6 +12,13 @@ const error = ref('')
 const success = ref('')
 const showForm = ref(false)
 const editingId = ref(null)
+const readinessFilter = ref('all')
+const readinessFilters = [
+  { value: 'all', label: 'All' },
+  { value: 'ai_candidate', label: 'AI Candidate' },
+  { value: 'production_ready', label: 'Production Ready' },
+  { value: 'needs_work', label: 'Needs Work' },
+]
 
 const emptySize = () => ({
   size_label: '',
@@ -58,7 +65,9 @@ async function load() {
   loading.value = true
   try {
     const [productResponse, categoryResponse] = await Promise.all([
-      api.get('/admin/products'),
+      api.get('/admin/products', {
+        params: readinessFilter.value === 'all' ? {} : { readiness: readinessFilter.value },
+      }),
       api.get('/admin/categories'),
     ])
     products.value = productResponse.data.data
@@ -206,6 +215,11 @@ function qaIssues(product) {
 function markImageBroken(product) {
   product._imageBroken = true
 }
+
+async function setReadinessFilter(value) {
+  readinessFilter.value = value
+  await load()
+}
 </script>
 
 <template>
@@ -216,10 +230,21 @@ function markImageBroken(product) {
   <p v-if="error" class="form-error">{{ error }}</p>
   <p v-if="success" class="form-success">{{ success }}</p>
 
+  <div class="filter-bar">
+    <button
+      v-for="option in readinessFilters"
+      :key="option.value"
+      :class="{ active: readinessFilter === option.value }"
+      @click="setReadinessFilter(option.value)"
+    >
+      {{ option.label }}
+    </button>
+  </div>
+
   <section v-if="showForm" class="panel product-form">
     <div class="panel-heading">
       <div><p class="eyebrow">Product editor</p><h2>{{ formTitle }}</h2></div>
-      <button class="icon-btn" @click="reset">×</button>
+      <button class="icon-btn" @click="reset">x</button>
     </div>
 
     <form @submit.prevent="save">
@@ -291,7 +316,7 @@ function markImageBroken(product) {
         <label><span>Sleeve</span><input v-model="size.sleeve_length_cm" type="number" step="0.1"></label>
         <label><span>Length</span><input v-model="size.height_cm" type="number" step="0.1" required></label>
         <label><span>Fit ease</span><input v-model="size.fit_ease_cm" type="number" step="0.1"></label>
-        <button type="button" class="icon-btn danger" @click="removeSize(index)">×</button>
+        <button type="button" class="icon-btn danger" @click="removeSize(index)">x</button>
       </div>
 
       <details class="fit-tuning">
@@ -306,7 +331,7 @@ function markImageBroken(product) {
 
       <div class="form-actions">
         <button type="button" class="btn btn-secondary" @click="reset">Cancel</button>
-        <button class="btn btn-primary" :disabled="saving">{{ saving ? 'Saving…' : 'Save product' }}</button>
+        <button class="btn btn-primary" :disabled="saving">{{ saving ? 'Saving...' : 'Save product' }}</button>
       </div>
     </form>
   </section>
@@ -328,7 +353,7 @@ function markImageBroken(product) {
           <StatusPill :value="product.status" />
         </div>
         <div class="product-meta">
-          <span>{{ product.garment_type || 'top' }} · {{ product.sizing_charts.length }} sizes</span>
+          <span>{{ product.garment_type || 'top' }} - {{ product.sizing_charts.length }} sizes</span>
           <strong>{{ Number(product.unit_price).toLocaleString('ar-EG') }} {{ product.currency }}</strong>
         </div>
         <StatusPill :value="product.background_removal_status" />

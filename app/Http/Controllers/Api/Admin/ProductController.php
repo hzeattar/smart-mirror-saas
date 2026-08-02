@@ -8,28 +8,51 @@ use App\Http\Controllers\Controller;
 use App\Jobs\ProcessGarmentImage;
 use App\Models\Category;
 use App\Models\Product;
+use App\Services\ImageQaService;
+use App\Services\ProductReadinessService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Http\UploadedFile;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 
 class ProductController extends Controller
 {
+    public function __construct(
+        private readonly ProductReadinessService $readiness,
+        private readonly ImageQaService $imageQa,
+    ) {}
+
     public function index(Request $request): JsonResponse
     {
-        $products = Product::query()
+        $query = Product::query()
             ->forTenant($request->user()->tenant_id)
             ->with(['category', 'sizingCharts'])
             ->when(! $request->boolean('include_inactive'), fn ($query) => $query->where('status', ProductStatus::Active))
-            ->latest()
-            ->paginate(20);
+            ->latest();
 
-        $products->getCollection()->transform(fn (Product $product) => [
-            ...$product->toArray(),
-            'readiness' => $this->readiness($product),
-        ]);
+        $readiness = $request->string('readiness')->toString();
+        if ($readiness !== '' && $readiness !== 'all') {
+            $page = max(1, (int) $request->integer('page', 1));
+            $perPage = 20;
+            $filtered = $query->get()
+                ->filter(fn (Product $product) => $this->matchesReadinessFilter($product, $readiness))
+                ->values()
+                ->map(fn (Product $product) => $this->present($product));
+
+            return response()->json(new LengthAwarePaginator(
+                $filtered->forPage($page, $perPage)->values(),
+                $filtered->count(),
+                $perPage,
+                $page,
+                ['path' => $request->url(), 'query' => $request->query()],
+            ));
+        }
+
+        $products = $query->paginate(20);
+
+        $products->getCollection()->transform(fn (Product $product) => $this->present($product));
 
         return response()->json($products);
     }
@@ -45,8 +68,8 @@ class ProductController extends Controller
             $texturePath = $request->file('texture_image')?->store('garments/textures', config('filesystems.default'));
             $disk = Storage::disk(config('filesystems.default'));
             $imageQa = [
-                'base' => $this->imageQa($request->file('base_image'), 'base'),
-                'texture' => $this->imageQa($request->file('texture_image'), 'texture'),
+                'base' => $this->imageQa->fromUpload($request->file('base_image'), 'base'),
+                'texture' => $this->imageQa->fromUpload($request->file('texture_image'), 'texture'),
             ];
 
             $product = Product::query()->create([
@@ -84,7 +107,7 @@ class ProductController extends Controller
 
         return response()->json([
             'product' => $product->load(['category', 'sizingCharts']),
-            'readiness' => $this->readiness($product),
+            'readiness' => $this->readiness->readiness($product),
         ], 201);
     }
 
@@ -94,7 +117,7 @@ class ProductController extends Controller
 
         return response()->json([
             'product' => $product->load(['category', 'sizingCharts']),
-            'readiness' => $this->readiness($product),
+            'readiness' => $this->readiness->readiness($product),
         ]);
     }
 
@@ -119,7 +142,7 @@ class ProductController extends Controller
                 $values['background_removal_status'] = BackgroundRemovalStatus::Pending;
                 $values['image_qa'] = [
                     ...($product->image_qa ?? []),
-                    'base' => $this->imageQa($request->file('base_image'), 'base'),
+                    'base' => $this->imageQa->fromUpload($request->file('base_image'), 'base'),
                 ];
             }
 
@@ -130,7 +153,7 @@ class ProductController extends Controller
                 $values['processed_at'] = now();
                 $values['image_qa'] = [
                     ...($values['image_qa'] ?? ($product->image_qa ?? [])),
-                    'texture' => $this->imageQa($request->file('texture_image'), 'texture'),
+                    'texture' => $this->imageQa->fromUpload($request->file('texture_image'), 'texture'),
                 ];
             }
 
@@ -148,7 +171,7 @@ class ProductController extends Controller
 
         return response()->json([
             'product' => $fresh,
-            'readiness' => $this->readiness($fresh),
+            'readiness' => $this->readiness->readiness($fresh),
         ]);
     }
 
@@ -246,126 +269,24 @@ class ProductController extends Controller
         return ['left' => 0, 'right' => 0, 'top' => 0, 'bottom' => 0];
     }
 
-    private function readiness(Product $product): array
+    private function present(Product $product): array
     {
-        $sizesReady = $product->relationLoaded('sizingCharts')
-            ? $product->sizingCharts->count() >= 4
-            : $product->sizingCharts()->count() >= 4;
-        $hasImage = filled($product->base_image_url) || filled($product->base_image_path);
-        $hasTexture = filled($product->texture_image_url) || filled($product->texture_image_path);
-        $localGeneratedDemo = str_contains((string) $product->description, 'Local realistic demo garment texture')
-            || str_starts_with((string) $product->sku, 'REAL-')
-            || $product->is_demo_asset;
-        $qa = $product->image_qa ?? [];
-        $baseQaOk = in_array(($qa['base']['status'] ?? ($hasImage ? 'ok' : 'missing')), ['ok', 'warning', 'demo'], true);
-        $textureQaOk = in_array(($qa['texture']['status'] ?? ($hasTexture ? 'ok' : 'missing')), ['ok', 'warning', 'demo'], true);
-        $metadataReady = filled($product->asset_source) && filled($product->asset_license);
-        $productionReady = $hasImage && $hasTexture && $sizesReady && $baseQaOk && $textureQaOk && $metadataReady && ! $localGeneratedDemo;
-        $aiCandidate = $hasImage && $hasTexture && $sizesReady && $baseQaOk && $textureQaOk;
-        $gate = match (true) {
-            ! $hasImage => ['missing_photo', 'Missing Photo'],
-            ! $hasTexture || ! $textureQaOk => ['needs_cutout', 'Needs Cutout'],
-            ! $sizesReady => ['needs_sizes', 'Needs Sizes'],
-            $productionReady => ['production_ready', 'Production Ready'],
-            default => ['ai_candidate', 'AI Candidate'],
+        return [
+            ...$product->toArray(),
+            'readiness' => $this->readiness->readiness($product),
+        ];
+    }
+
+    private function matchesReadinessFilter(Product $product, string $filter): bool
+    {
+        $readiness = $this->readiness->readiness($product);
+
+        return match ($filter) {
+            'production_ready' => (bool) $readiness['production_asset_ready'],
+            'ai_candidate' => (bool) $readiness['ai_ready'],
+            'needs_work' => ! (bool) $readiness['ai_ready'],
+            default => true,
         };
-
-        return [
-            'image_ready' => $hasImage,
-            'texture_ready' => $hasTexture,
-            'sizes_ready' => $sizesReady,
-            'qa_ready' => $baseQaOk && $textureQaOk,
-            'metadata_ready' => $metadataReady,
-            'ai_ready' => $aiCandidate,
-            'production_asset_ready' => $productionReady,
-            'status' => $gate[0],
-            'label' => $gate[1],
-            'issues' => [
-                ...($qa['base']['issues'] ?? []),
-                ...($qa['texture']['issues'] ?? []),
-                ...($localGeneratedDemo ? ['demo_asset'] : []),
-                ...(! $metadataReady ? ['missing_asset_metadata'] : []),
-            ],
-        ];
-    }
-
-    private function imageQa(?UploadedFile $file, string $kind): array
-    {
-        if (! $file) {
-            return ['status' => 'missing', 'issues' => ['missing_file']];
-        }
-
-        $issues = [];
-        $size = @getimagesize($file->getRealPath());
-        $width = (int) ($size[0] ?? 0);
-        $height = (int) ($size[1] ?? 0);
-        $aspect = $height > 0 ? round($width / $height, 3) : 0.0;
-
-        if ($width < 600 || $height < 600) {
-            $issues[] = 'resolution_below_600px';
-        }
-        if ($aspect < 0.35 || $aspect > 2.2) {
-            $issues[] = 'extreme_aspect_ratio';
-        }
-
-        $alphaCoverage = null;
-        if ($kind === 'texture') {
-            $alphaCoverage = $this->alphaCoverage($file);
-            if ($alphaCoverage !== null && $alphaCoverage < 0.02) {
-                $issues[] = 'no_transparent_cutout_detected';
-            }
-            if ($alphaCoverage !== null && $alphaCoverage > 0.85) {
-                $issues[] = 'texture_mostly_transparent';
-            }
-        }
-
-        $status = 'ok';
-        if ($issues !== []) {
-            $status = $kind === 'texture' && in_array('no_transparent_cutout_detected', $issues, true) ? 'failed' : 'warning';
-        }
-
-        return [
-            'status' => $status,
-            'width' => $width,
-            'height' => $height,
-            'aspect_ratio' => $aspect,
-            'alpha_coverage' => $alphaCoverage,
-            'issues' => $issues,
-            'checked_at' => now()->toIso8601String(),
-        ];
-    }
-
-    private function alphaCoverage(UploadedFile $file): ?float
-    {
-        if (! function_exists('imagecreatefromstring')) {
-            return null;
-        }
-
-        $image = @imagecreatefromstring((string) file_get_contents($file->getRealPath()));
-        if ($image === false) {
-            return null;
-        }
-
-        $width = imagesx($image);
-        $height = imagesy($image);
-        $transparent = 0;
-        $samples = 0;
-        $stepX = max(1, (int) floor($width / 32));
-        $stepY = max(1, (int) floor($height / 32));
-
-        for ($y = 0; $y < $height; $y += $stepY) {
-            for ($x = 0; $x < $width; $x += $stepX) {
-                $rgba = imagecolorat($image, $x, $y);
-                $alpha = ($rgba & 0x7F000000) >> 24;
-                if ($alpha > 8) {
-                    $transparent++;
-                }
-                $samples++;
-            }
-        }
-        imagedestroy($image);
-
-        return $samples > 0 ? round($transparent / $samples, 4) : null;
     }
 
     private function assertCategory(int $tenantId, ?int $categoryId): void

@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\Admin\AiEvaluationController;
 use App\Http\Controllers\Api\Admin\CategoryController;
 use App\Http\Controllers\Api\Admin\DashboardController;
 use App\Http\Controllers\Api\Admin\MirrorController as AdminMirrorController;
@@ -49,6 +50,10 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function (): void {
         Route::post('/products/{product}/reprocess', [ProductController::class, 'reprocess']);
         Route::get('/try-on-batches', [TryOnBatchController::class, 'index']);
         Route::get('/try-on-jobs', [TryOnJobController::class, 'index']);
+        Route::get('/ai-evaluations', [AiEvaluationController::class, 'index']);
+        Route::post('/ai-evaluations', [AiEvaluationController::class, 'store']);
+        Route::get('/ai-evaluations/{evaluation}', [AiEvaluationController::class, 'show']);
+        Route::patch('/ai-evaluations/{evaluation}/items/{item}', [AiEvaluationController::class, 'rateItem']);
         Route::get('/orders', [AdminOrderController::class, 'index']);
         Route::get('/orders/{order}', [AdminOrderController::class, 'show']);
         Route::patch('/orders/{order}/status', [AdminOrderController::class, 'updateStatus']);
@@ -57,6 +62,7 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function (): void {
         Route::get('/mirrors', [AdminMirrorController::class, 'index']);
         Route::post('/mirrors', [AdminMirrorController::class, 'store']);
         Route::patch('/mirrors/{mirror}', [AdminMirrorController::class, 'update']);
+        Route::patch('/mirrors/{mirror}/kiosk-config', [AdminMirrorController::class, 'updateKioskConfig']);
         Route::post('/mirrors/{mirror}/rotate-code', [AdminMirrorController::class, 'rotatePairingCode']);
     });
 });

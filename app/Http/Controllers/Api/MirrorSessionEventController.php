@@ -14,10 +14,14 @@ class MirrorSessionEventController extends Controller
     public function store(Request $request): JsonResponse
     {
         $data = $request->validate([
+            'session_id' => ['nullable', 'string', 'max:80'],
             'events' => ['required', 'array', 'min:1', 'max:50'],
             'events.*.event' => ['required', 'string', 'max:80'],
             'events.*.ts' => ['nullable'],
             'events.*.fps' => ['nullable', 'numeric', 'min:0', 'max:240'],
+            'events.*.session_id' => ['nullable', 'string', 'max:80'],
+            'events.*.sequence' => ['nullable', 'integer', 'min:0'],
+            'events.*.severity' => ['nullable', 'string', 'max:20'],
             'events.*.payload' => ['nullable', 'array'],
         ]);
 
@@ -26,9 +30,12 @@ class MirrorSessionEventController extends Controller
         $rows = collect($data['events'])->map(fn (array $event) => [
             'tenant_id' => $mirror->tenant_id,
             'mirror_id' => $mirror->id,
+            'session_id' => $event['session_id'] ?? $data['session_id'] ?? null,
+            'sequence' => $event['sequence'] ?? null,
+            'severity' => $this->severity($event['severity'] ?? null),
             'event' => $event['event'],
             'fps' => $event['fps'] ?? ($event['payload']['fps'] ?? null),
-            'payload' => json_encode($event['payload'] ?? collect($event)->except(['event', 'ts', 'fps'])->all(), JSON_THROW_ON_ERROR),
+            'payload' => json_encode($event['payload'] ?? collect($event)->except(['event', 'ts', 'fps', 'session_id', 'sequence', 'severity'])->all(), JSON_THROW_ON_ERROR),
             'occurred_at' => $this->occurredAt($event['ts'] ?? null),
             'created_at' => now(),
             'updated_at' => now(),
@@ -36,12 +43,19 @@ class MirrorSessionEventController extends Controller
 
         MirrorSessionEvent::query()->insert($rows);
 
-        $latest = collect($data['events'])->last();
         $metadata = $mirror->metadata ?? [];
+        $previousHealth = is_array($metadata['session_health'] ?? null) ? $metadata['session_health'] : [];
+        $events = collect($data['events']);
+        $latest = $events->last();
+        $latestFpsEvent = $events->reverse()->first(fn (array $event) => isset($event['fps']) || isset($event['payload']['fps']));
         $metadata['session_health'] = [
             'last_event' => $latest['event'] ?? null,
-            'last_fps' => $latest['fps'] ?? ($latest['payload']['fps'] ?? null),
+            'last_fps' => $latestFpsEvent['fps'] ?? ($latestFpsEvent['payload']['fps'] ?? ($previousHealth['last_fps'] ?? null)),
             'last_event_at' => now()->toIso8601String(),
+            'session_id' => $latest['session_id'] ?? $data['session_id'] ?? null,
+            'sequence' => $latest['sequence'] ?? null,
+            'severity' => $this->severity($latest['severity'] ?? null),
+            'payload' => $latest['payload'] ?? null,
         ];
         $mirror->update(['metadata' => $metadata]);
 
@@ -63,5 +77,12 @@ class MirrorSessionEventController extends Controller
         } catch (\Throwable) {
             return now();
         }
+    }
+
+    private function severity(?string $value): string
+    {
+        $severity = strtolower((string) ($value ?: 'info'));
+
+        return in_array($severity, ['debug', 'info', 'warning', 'error', 'critical'], true) ? $severity : 'info';
     }
 }

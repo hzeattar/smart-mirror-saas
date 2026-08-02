@@ -14,6 +14,9 @@ class MirrorSessionEvent extends Model
     protected $fillable = [
         'tenant_id',
         'mirror_id',
+        'session_id',
+        'sequence',
+        'severity',
         'event',
         'fps',
         'payload',
@@ -24,6 +27,7 @@ class MirrorSessionEvent extends Model
     {
         return [
             'fps' => 'decimal:2',
+            'sequence' => 'integer',
             'payload' => 'array',
             'occurred_at' => 'datetime',
         ];
