@@ -43,4 +43,13 @@ class DemoSeederTest extends TestCase
         $metadata = json_decode(file_get_contents(base_path('docs/REAL_GARMENT_SOURCES.json')), true);
         $this->assertGreaterThanOrEqual(10, count($metadata['assets'] ?? []));
     }
+
+    public function test_demo_seeders_can_run_after_legacy_products_are_soft_deleted(): void
+    {
+        $this->seed();
+        $this->seed();
+
+        $this->assertSame(1, Product::query()->withTrashed()->where('sku', 'TSHIRT-001')->count());
+        $this->assertSame(10, Product::query()->where('sku', 'like', 'REAL-%')->count());
+    }
 }

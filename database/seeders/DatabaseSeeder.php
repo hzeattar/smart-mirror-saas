@@ -42,7 +42,7 @@ class DatabaseSeeder extends Seeder
             ['name' => 'T-Shirts & Tops', 'status' => CategoryStatus::Active]
         );
 
-        $product = Product::query()->firstOrCreate(
+        $product = Product::query()->withTrashed()->updateOrCreate(
             ['tenant_id' => $tenant->id, 'sku' => 'TSHIRT-001'],
             [
                 'category_id' => $tops->id,
