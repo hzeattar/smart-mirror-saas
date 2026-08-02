@@ -24,6 +24,10 @@ class Product extends Model
         'garment_type',
         'fit_profile',
         'texture_anchor',
+        'is_demo_asset',
+        'asset_source',
+        'asset_license',
+        'image_qa',
         'base_image_url',
         'base_image_path',
         'texture_image_url',
@@ -44,6 +48,8 @@ class Product extends Model
             'background_removal_status' => BackgroundRemovalStatus::class,
             'fit_profile' => 'array',
             'texture_anchor' => 'array',
+            'is_demo_asset' => 'boolean',
+            'image_qa' => 'array',
             'processed_at' => 'datetime',
         ];
     }

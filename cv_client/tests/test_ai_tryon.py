@@ -27,6 +27,9 @@ class FakeTryOnApi:
         self.polled.append(job_id)
         return {"id": job_id, "status": "completed", "result_url": "https://example.test/result.jpg"}
 
+    def kiosk_config(self):
+        return {"outfit_count": 4, "capture_burst_count": 6, "gestures": {"hold_seconds": 0.6}}
+
 
 def args(directory: str):
     return SimpleNamespace(
@@ -86,6 +89,15 @@ class AiTryOnTests(unittest.TestCase):
         self.assertTrue(AiTryOnState(status="queued").active)
         self.assertTrue(AiTryOnState(status="processing").active)
         self.assertFalse(AiTryOnState(status="completed").active)
+
+    def test_load_kiosk_config_updates_runtime_defaults(self):
+        with tempfile.TemporaryDirectory() as directory:
+            app = SmartMirrorAppV2(args(directory))
+            app.api = FakeTryOnApi()
+            app._load_kiosk_config()
+            self.assertEqual(4, app.kiosk_config["outfit_count"])
+            self.assertEqual(6, app.kiosk_config["capture_burst_count"])
+            self.assertEqual(0.6, app.args.gesture_hold)
 
 
 if __name__ == "__main__":

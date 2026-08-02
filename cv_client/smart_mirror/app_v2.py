@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import cv2
@@ -15,6 +16,7 @@ from .hybrid import (
     BurstFrame,
     HybridState,
     best_burst_frame,
+    draw_calibration_screen,
     draw_body_scan,
     draw_hybrid_hud,
     draw_kiosk_health,
@@ -46,6 +48,21 @@ class SmartMirrorAppV2(SmartMirrorApp):
         self._current_fps = 0.0
         self._last_session_upload_at = 0.0
         self._pending_ai_tryon = False
+        self.calibration_screen_visible = bool(getattr(args, "calibration_screen", False))
+        self._loop_frame_index = 0
+        self._last_hands = []
+        self._preview_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="preview")
+        self._preview_futures = {}
+        self.kiosk_config = {
+            "outfit_count": 3,
+            "auto_start_delay_seconds": 1.5,
+            "capture_burst_count": 5,
+            "capture_duration_seconds": 2.0,
+            "gallery_timeout_seconds": 45.0,
+            "poll_interval_seconds": 2.5,
+            "pose_every_n": int(getattr(args, "pose_every_n", 2)),
+            "hand_every_n": int(getattr(args, "hand_every_n", 2)),
+        }
 
     def _neighbour_name(self, delta: int) -> str:
         if len(self.products) < 2:
@@ -68,6 +85,36 @@ class SmartMirrorAppV2(SmartMirrorApp):
     def change_product(self, delta: int) -> None:
         super().change_product(delta)
         self.session_log.event("product_changed", product_id=self.product.id, product_name=self.product.name)
+
+    def _load_kiosk_config(self) -> None:
+        if not self.api:
+            return
+        try:
+            config = self.api.kiosk_config()
+        except Exception as exc:
+            print(f"Kiosk config warning: {exc}")
+            return
+
+        for key in self.kiosk_config:
+            if key in config:
+                self.kiosk_config[key] = config[key]
+        gestures = config.get("gestures") if isinstance(config.get("gestures"), dict) else {}
+        self.args.gesture_cooldown = float(gestures.get("cooldown_seconds", getattr(self.args, "gesture_cooldown", 1.10)))
+        self.args.gesture_hold = float(gestures.get("hold_seconds", getattr(self.args, "gesture_hold", 0.75)))
+        self.args.swipe_distance = float(gestures.get("swipe_distance", getattr(self.args, "swipe_distance", 0.20)))
+        self.session_log.event("kiosk_config_loaded", config=self.kiosk_config)
+
+    def _cfg_float(self, key: str, default: float) -> float:
+        try:
+            return float(self.kiosk_config.get(key, default))
+        except (TypeError, ValueError):
+            return default
+
+    def _cfg_int(self, key: str, default: int) -> int:
+        try:
+            return max(1, int(self.kiosk_config.get(key, default)))
+        except (TypeError, ValueError):
+            return default
 
     def _selected_size_id(self, selected_size: dict | None) -> int | None:
         if not selected_size:
@@ -188,6 +235,7 @@ class SmartMirrorAppV2(SmartMirrorApp):
         self.hybrid.mode = "capture_burst"
         self.hybrid.message = "HOLD STILL"
         self.hybrid.burst.clear()
+        self.hybrid.target_burst_count = self._cfg_int("capture_burst_count", 5)
         self.hybrid.capture_started_at = now
         self.session_log.event("hybrid_capture_started", product_id=self.product.id, product_name=self.product.name)
 
@@ -201,7 +249,7 @@ class SmartMirrorAppV2(SmartMirrorApp):
             return
         try:
             snapshot_path = save_hybrid_snapshot(best, Path(self.args.data_dir) / "hybrid-inputs")
-            products = self._hybrid_outfit_products(3)
+            products = self._hybrid_outfit_products(self._cfg_int("outfit_count", 3))
             batch = self.api.create_try_on_batch(products, snapshot_path, self._selected_size_id(selected_size))
             self.hybrid.mode = "generating"
             self.hybrid.status = str(batch.get("status") or "queued")
@@ -209,6 +257,7 @@ class SmartMirrorAppV2(SmartMirrorApp):
             self.hybrid.jobs = list(batch.get("jobs") or [])
             self.hybrid.current_index = 0
             self.hybrid.last_poll_at = 0.0
+            self.hybrid.gallery_started_at = 0.0
             self.hybrid.message = "AI PROCESSING"
             self.session_log.event(
                 "hybrid_batch_created",
@@ -229,7 +278,7 @@ class SmartMirrorAppV2(SmartMirrorApp):
             return
         if self.hybrid.mode not in {"generating", "gallery"}:
             return
-        if now - self.hybrid.last_poll_at < 2.5:
+        if now - self.hybrid.last_poll_at < self._cfg_float("poll_interval_seconds", 2.5):
             return
         self.hybrid.last_poll_at = now
         try:
@@ -240,6 +289,8 @@ class SmartMirrorAppV2(SmartMirrorApp):
             ready = self.hybrid.ready_jobs
             self.hybrid.message = f"AI READY {len(ready)}/{max(1, len(self.hybrid.jobs))}" if ready else "AI PROCESSING"
             if ready:
+                if self.hybrid.mode != "gallery":
+                    self.hybrid.gallery_started_at = now
                 self.hybrid.mode = "gallery"
                 self._preload_hybrid_preview()
             if self.hybrid.status == "failed" and not ready:
@@ -263,14 +314,23 @@ class SmartMirrorAppV2(SmartMirrorApp):
             return
         current = ready[self.hybrid.current_index % len(ready)]
         url = str(current.get("result_url") or "")
-        if not url or url in self.hybrid.preview_cache:
+        if not url or url in self.hybrid.preview_cache or url in self._preview_futures:
             return
-        try:
-            preview = self.api.download_result_preview(url)
-            if preview is not None:
-                self.hybrid.preview_cache[url] = preview
-        except Exception as exc:
-            self.session_log.event("hybrid_preview_error", url=url, error=str(exc))
+        self._preview_futures[url] = self._preview_executor.submit(self.api.download_result_preview, url)
+
+    def _collect_preview_futures(self) -> None:
+        if not self.hybrid:
+            return
+        for url, future in list(self._preview_futures.items()):
+            if not future.done():
+                continue
+            self._preview_futures.pop(url, None)
+            try:
+                preview = future.result()
+                if preview is not None:
+                    self.hybrid.preview_cache[url] = preview
+            except Exception as exc:
+                self.session_log.event("hybrid_preview_error", url=url, error=str(exc))
 
     def _handle_hybrid_action(self, action: str | None, pose, now: float) -> bool:
         if not self.hybrid or not action:
@@ -285,6 +345,7 @@ class SmartMirrorAppV2(SmartMirrorApp):
                 self.hybrid.qr_visible = False
                 self.hybrid.qr_image = None
                 self._preload_hybrid_preview()
+                self.hybrid.gallery_started_at = now
                 self.session_log.event("hybrid_gallery_next", index=self.hybrid.current_index)
             return True
         if action == "previous" and self.hybrid.mode == "gallery":
@@ -294,16 +355,19 @@ class SmartMirrorAppV2(SmartMirrorApp):
                 self.hybrid.qr_visible = False
                 self.hybrid.qr_image = None
                 self._preload_hybrid_preview()
+                self.hybrid.gallery_started_at = now
                 self.session_log.event("hybrid_gallery_previous", index=self.hybrid.current_index)
             return True
         if action == "confirm" and self.hybrid.mode == "gallery":
             self.hybrid.qr_visible = True
+            self.hybrid.gallery_started_at = now
             self.session_log.event("hybrid_gallery_qr", index=self.hybrid.current_index)
             return True
         if action == "back":
             self.hybrid.mode = "idle_attractor"
             self.hybrid.message = "READY"
             self.hybrid.qr_visible = False
+            self.hybrid.gallery_started_at = 0.0
             return True
         return False
 
@@ -368,6 +432,7 @@ class SmartMirrorAppV2(SmartMirrorApp):
 
     def run(self) -> None:
         self.setup_catalog()
+        self._load_kiosk_config()
         camera, camera_backend = open_camera(
             self.args.camera,
             self.args.width,
@@ -407,12 +472,16 @@ class SmartMirrorAppV2(SmartMirrorApp):
                 raw_frame = frame.copy()
 
                 now = time.monotonic()
+                self._loop_frame_index += 1
                 self._log_fps(now)
                 self._flush_session_events(now)
                 timestamp_ms = int(now * 1000)
                 self._poll_ai_tryon(now)
                 self._poll_hybrid_batch(now)
-                hands = hand_tracker.detect(frame, timestamp_ms) if hand_tracker else []
+                self._collect_preview_futures()
+                if hand_tracker and self._loop_frame_index % self._cfg_int("hand_every_n", 2) == 0:
+                    self._last_hands = hand_tracker.detect(frame, timestamp_ms)
+                hands = self._last_hands if hand_tracker else []
                 self.gesture_status = gesture_engine.update(hands, now) if gesture_engine else GestureStatus()
                 self.cursor_state = (
                     hand_cursor.update(hands, self.hitboxes, width, height, now)
@@ -433,7 +502,9 @@ class SmartMirrorAppV2(SmartMirrorApp):
                     else:
                         self.handle_action(action)
 
-                detected_pose = pose_tracker.detect(frame, timestamp_ms)
+                detected_pose = None
+                if self._loop_frame_index % self._cfg_int("pose_every_n", 2) == 0:
+                    detected_pose = pose_tracker.detect(frame, timestamp_ms)
                 if detected_pose:
                     self.last_pose = self.pose_smoother.update(detected_pose)
                     self.last_pose_at = now
@@ -462,19 +533,32 @@ class SmartMirrorAppV2(SmartMirrorApp):
                     if pose and self.hybrid.mode in {"idle_attractor", "align_user"}:
                         if self.hybrid.presence_started_at <= 0:
                             self.hybrid.presence_started_at = now
-                        elif bool(getattr(self.args, "hybrid_auto_start", True)) and now - self.hybrid.presence_started_at >= 1.5:
+                        elif bool(getattr(self.args, "hybrid_auto_start", True)) and now - self.hybrid.presence_started_at >= self._cfg_float("auto_start_delay_seconds", 1.5):
                             self._begin_hybrid_countdown(pose, now, "auto")
                     elif not pose and self.hybrid.mode in {"idle_attractor", "align_user"}:
                         self.hybrid.presence_started_at = 0.0
 
                     if self.hybrid.mode == "countdown" and now - self.hybrid.countdown_started_at >= 1.2:
                         self._start_hybrid_capture(pose, now)
+                    if (
+                        self.hybrid.mode == "gallery"
+                        and self.hybrid.gallery_started_at > 0
+                        and now - self.hybrid.gallery_started_at >= self._cfg_float("gallery_timeout_seconds", 45.0)
+                    ):
+                        self.hybrid.mode = "idle_attractor"
+                        self.hybrid.message = "READY"
+                        self.hybrid.qr_visible = False
+                        self.hybrid.gallery_started_at = 0.0
+                        self.session_log.event("hybrid_gallery_timeout")
 
                 if self.hybrid and self.hybrid.mode == "capture_burst":
                     elapsed = now - self.hybrid.capture_started_at
-                    if len(self.hybrid.burst) < 5 and (not self.hybrid.burst or elapsed / max(1, len(self.hybrid.burst)) >= 0.32):
+                    burst_count = self._cfg_int("capture_burst_count", 5)
+                    capture_duration = self._cfg_float("capture_duration_seconds", 2.0)
+                    interval = max(0.16, capture_duration / max(1, burst_count))
+                    if len(self.hybrid.burst) < burst_count and (not self.hybrid.burst or elapsed / max(1, len(self.hybrid.burst)) >= interval):
                         self.hybrid.burst.append(BurstFrame(raw_frame.copy(), frame_score(raw_frame, pose, hands)))
-                    if len(self.hybrid.burst) >= 5 or elapsed >= 2.0:
+                    if len(self.hybrid.burst) >= burst_count or elapsed >= capture_duration:
                         self._submit_hybrid_batch(selected_size, now)
 
                 confidence = fit_confidence(
@@ -543,6 +627,17 @@ class SmartMirrorAppV2(SmartMirrorApp):
                     draw_hybrid_hud(frame, self.hybrid, gesture_label, gesture_progress)
                     if bool(getattr(self.args, "kiosk_health_hud", True)):
                         draw_kiosk_health(frame, self.args.camera, camera_backend, self._current_fps, pose is not None, bool(hands))
+                if self.calibration_screen_visible:
+                    draw_calibration_screen(
+                        frame,
+                        self.args.camera,
+                        camera_backend,
+                        self._current_fps,
+                        pose is not None,
+                        bool(hands),
+                        self.api is not None,
+                        self.hybrid.status if self.hybrid else self.ai_tryon.status,
+                    )
 
                 cv2.imshow(self.WINDOW_NAME, frame)
                 key = cv2.waitKeyEx(1)
@@ -565,6 +660,8 @@ class SmartMirrorAppV2(SmartMirrorApp):
                     self.change_size(-1)
                 elif key in (ord("a"), ord("A")):
                     self.auto_size = not self.auto_size
+                elif key in (ord("k"), ord("K")):
+                    self.calibration_screen_visible = not self.calibration_screen_visible
                 elif key in (ord("f"), ord("F")):
                     self.toggle_fullscreen()
                 elif key in (ord("s"), ord("S")):
@@ -590,4 +687,5 @@ class SmartMirrorAppV2(SmartMirrorApp):
             if hand_tracker:
                 hand_tracker.close()
             camera.release()
+            self._preview_executor.shutdown(wait=False, cancel_futures=True)
             cv2.destroyAllWindows()

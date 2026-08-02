@@ -160,6 +160,13 @@ class PhotographicGarmentCatalogSeeder extends Seeder
                     'garment_type' => $item['garment_type'],
                     'fit_profile' => $item['fit_profile'],
                     'texture_anchor' => ['left' => 0.02, 'right' => 0.02, 'top' => 0.02, 'bottom' => 0.02],
+                    'is_demo_asset' => true,
+                    'asset_source' => 'AI-generated local photorealistic demo pack',
+                    'asset_license' => 'Demo placeholder; replace with store-owned or commercially licensed product photography before commercial launch.',
+                    'image_qa' => [
+                        'base' => ['status' => 'demo', 'issues' => ['demo_asset']],
+                        'texture' => ['status' => 'demo', 'issues' => ['demo_asset']],
+                    ],
                     'base_image_url' => $item['local_asset'],
                     'texture_image_url' => $item['local_asset'],
                     'unit_price' => $item['price'],

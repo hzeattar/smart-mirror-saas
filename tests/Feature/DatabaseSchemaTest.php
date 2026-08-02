@@ -37,6 +37,10 @@ class DatabaseSchemaTest extends TestCase
             'name',
             'base_image_url',
             'texture_image_url',
+            'is_demo_asset',
+            'asset_source',
+            'asset_license',
+            'image_qa',
         ]));
         $this->assertTrue(Schema::hasColumns('sizing_charts', [
             'product_id',

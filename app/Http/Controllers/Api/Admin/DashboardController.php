@@ -31,6 +31,18 @@ class DashboardController extends Controller
             'ai_completion_rate' => $this->completionRate($tenantId),
             'ai_average_processing_seconds' => $this->averageProcessingSeconds($tenantId),
             'ai_failed_jobs' => TryOnJob::query()->forTenant($tenantId)->where('status', 'failed')->count(),
+            'average_fps_today' => (float) round((float) MirrorSessionEvent::query()
+                ->forTenant($tenantId)
+                ->whereDate('occurred_at', today())
+                ->whereNotNull('fps')
+                ->avg('fps'), 1),
+            'capture_completion_rate' => $this->captureCompletionRate($tenantId),
+            'failed_jobs_by_provider' => TryOnJob::query()
+                ->forTenant($tenantId)
+                ->where('status', 'failed')
+                ->selectRaw('provider, count(*) as total')
+                ->groupBy('provider')
+                ->pluck('total', 'provider'),
         ]]);
     }
 
@@ -61,5 +73,26 @@ class DashboardController extends Controller
         }
 
         return round($jobs->avg(fn (TryOnJob $job) => $job->started_at->diffInSeconds($job->completed_at)), 1);
+    }
+
+    private function captureCompletionRate(int $tenantId): float
+    {
+        $started = MirrorSessionEvent::query()
+            ->forTenant($tenantId)
+            ->whereDate('occurred_at', today())
+            ->where('event', 'hybrid_capture_started')
+            ->count();
+
+        if ($started === 0) {
+            return 0.0;
+        }
+
+        $submitted = MirrorSessionEvent::query()
+            ->forTenant($tenantId)
+            ->whereDate('occurred_at', today())
+            ->where('event', 'hybrid_batch_created')
+            ->count();
+
+        return round(($submitted / $started) * 100, 1);
     }
 }

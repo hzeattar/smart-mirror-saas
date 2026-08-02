@@ -42,6 +42,9 @@ const form = reactive({
   unit_price: '',
   currency: 'EGP',
   status: 'active',
+  is_demo_asset: false,
+  asset_source: '',
+  asset_license: '',
   sizes: [emptySize()],
   fit_profile: defaultFitProfile(),
   texture_anchor: defaultTextureAnchor(),
@@ -79,6 +82,9 @@ function reset() {
     unit_price: '',
     currency: 'EGP',
     status: 'active',
+    is_demo_asset: false,
+    asset_source: '',
+    asset_license: '',
     sizes: [emptySize()],
     fit_profile: defaultFitProfile(),
     texture_anchor: defaultTextureAnchor(),
@@ -105,6 +111,9 @@ function edit(product) {
     unit_price: product.unit_price,
     currency: product.currency,
     status: product.status,
+    is_demo_asset: Boolean(product.is_demo_asset),
+    asset_source: product.asset_source || '',
+    asset_license: product.asset_license || '',
     sizes: product.sizing_charts.map((size) => ({
       size_label: size.size_label,
       shoulder_width_cm: size.shoulder_width_cm,
@@ -144,7 +153,7 @@ async function save() {
     const body = new FormData()
     const scalarKeys = [
       'name', 'sku', 'category_id', 'description', 'garment_type',
-      'unit_price', 'currency', 'status', 'base_image', 'texture_image',
+      'unit_price', 'currency', 'status', 'is_demo_asset', 'asset_source', 'asset_license', 'base_image', 'texture_image',
     ]
     scalarKeys.forEach((key) => {
       const value = form[key]
@@ -182,11 +191,16 @@ async function reprocess(product) {
 }
 
 function readiness(product) {
+  if (product.readiness?.label) return product.readiness.label
   if (product.readiness?.status) return product.readiness.status
   if (!product.texture_image_url && !product.base_image_url) return 'needs_image'
   if (product.background_removal_status === 'failed') return 'failed'
   if (!product.texture_image_url) return 'preparing'
   return 'ready'
+}
+
+function qaIssues(product) {
+  return product.readiness?.issues?.filter(Boolean).slice(0, 3).join(', ') || ''
 }
 
 function markImageBroken(product) {
@@ -220,6 +234,7 @@ function markImageBroken(product) {
         </label>
         <label>Garment type
           <select v-model="form.garment_type">
+            <option value="shirt">Shirt</option>
             <option value="tshirt">T-shirt</option>
             <option value="polo">Polo</option>
             <option value="hoodie">Hoodie</option>
@@ -239,6 +254,9 @@ function markImageBroken(product) {
         </label>
         <label>Price<input v-model="form.unit_price" type="number" min="0" step="0.01" required></label>
         <label>Currency<input v-model="form.currency" maxlength="3" required></label>
+        <label>Asset source<input v-model="form.asset_source" placeholder="Store-owned shoot / supplier / license ID"></label>
+        <label>Asset license<input v-model="form.asset_license" placeholder="Owned, licensed, or supplier-approved"></label>
+        <label class="check-label"><input v-model="form.is_demo_asset" type="checkbox"> Demo asset only</label>
       </div>
 
       <label>Description<textarea v-model="form.description" rows="3"></textarea></label>
@@ -318,6 +336,7 @@ function markImageBroken(product) {
           <span>AI readiness</span>
           <StatusPill :value="readiness(product)" />
         </div>
+        <small v-if="qaIssues(product)" class="muted">QA: {{ qaIssues(product) }}</small>
         <small v-if="product.readiness && !product.readiness.production_asset_ready" class="muted">Demo asset; replace with store-owned product photo for production.</small>
         <div class="card-actions">
           <button class="text-btn" @click="edit(product)">Edit</button>

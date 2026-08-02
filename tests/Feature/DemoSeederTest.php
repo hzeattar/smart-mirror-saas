@@ -29,6 +29,9 @@ class DemoSeederTest extends TestCase
             $this->assertStringStartsWith('/demo-garments/real/', $product->base_image_url);
             $this->assertStringStartsWith('/demo-garments/real/', $product->texture_image_url);
             $this->assertStringContainsString('Local realistic demo garment texture', (string) $product->description);
+            $this->assertTrue($product->is_demo_asset);
+            $this->assertNotNull($product->asset_source);
+            $this->assertSame('demo', $product->image_qa['base']['status'] ?? null);
 
             foreach ($product->sizingCharts as $size) {
                 $this->assertNotNull($size->shoulder_width_cm);

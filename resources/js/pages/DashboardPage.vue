@@ -15,6 +15,8 @@ const cards = [
   ['ai_batches_today', 'AI batches', 'gallery sessions created today'],
   ['ai_completion_rate', 'AI completion', 'completed jobs percentage'],
   ['ai_average_processing_seconds', 'AI seconds', 'average completed job time'],
+  ['average_fps_today', 'Avg FPS', 'reported by kiosk telemetry today'],
+  ['capture_completion_rate', 'Capture rate', 'captures submitted after burst'],
 ]
 </script>
 <template>

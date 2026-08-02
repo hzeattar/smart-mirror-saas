@@ -10,6 +10,7 @@ use App\Models\Category;
 use App\Models\Product;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
@@ -43,6 +44,10 @@ class ProductController extends Controller
             $basePath = $request->file('base_image')?->store('garments/originals', config('filesystems.default'));
             $texturePath = $request->file('texture_image')?->store('garments/textures', config('filesystems.default'));
             $disk = Storage::disk(config('filesystems.default'));
+            $imageQa = [
+                'base' => $this->imageQa($request->file('base_image'), 'base'),
+                'texture' => $this->imageQa($request->file('texture_image'), 'texture'),
+            ];
 
             $product = Product::query()->create([
                 'tenant_id' => $tenantId,
@@ -53,6 +58,10 @@ class ProductController extends Controller
                 'garment_type' => $data['garment_type'] ?? 'top',
                 'fit_profile' => $data['fit_profile'] ?? $this->defaultFitProfile(),
                 'texture_anchor' => $data['texture_anchor'] ?? $this->defaultTextureAnchor(),
+                'is_demo_asset' => $request->boolean('is_demo_asset'),
+                'asset_source' => $data['asset_source'] ?? null,
+                'asset_license' => $data['asset_license'] ?? null,
+                'image_qa' => $imageQa,
                 'unit_price' => $data['unit_price'],
                 'currency' => strtoupper($data['currency'] ?? 'EGP'),
                 'status' => $data['status'] ?? ProductStatus::Draft,
@@ -100,11 +109,18 @@ class ProductController extends Controller
             $values = collect($data)
                 ->except(['sizes', 'base_image', 'texture_image'])
                 ->all();
+            if (array_key_exists('is_demo_asset', $data)) {
+                $values['is_demo_asset'] = $request->boolean('is_demo_asset');
+            }
 
             if ($request->hasFile('base_image')) {
                 $values['base_image_path'] = $request->file('base_image')->store('garments/originals', config('filesystems.default'));
                 $values['base_image_url'] = $disk->url($values['base_image_path']);
                 $values['background_removal_status'] = BackgroundRemovalStatus::Pending;
+                $values['image_qa'] = [
+                    ...($product->image_qa ?? []),
+                    'base' => $this->imageQa($request->file('base_image'), 'base'),
+                ];
             }
 
             if ($request->hasFile('texture_image')) {
@@ -112,6 +128,10 @@ class ProductController extends Controller
                 $values['texture_image_url'] = $disk->url($values['texture_image_path']);
                 $values['background_removal_status'] = BackgroundRemovalStatus::Completed;
                 $values['processed_at'] = now();
+                $values['image_qa'] = [
+                    ...($values['image_qa'] ?? ($product->image_qa ?? [])),
+                    'texture' => $this->imageQa($request->file('texture_image'), 'texture'),
+                ];
             }
 
             $product->update($values);
@@ -162,10 +182,13 @@ class ProductController extends Controller
             'sku' => ['nullable', 'string', 'max:100'],
             'category_id' => ['nullable', 'integer'],
             'description' => ['nullable', 'string', 'max:3000'],
-            'garment_type' => [$partial ? 'sometimes' : 'required', Rule::in(['top', 'tshirt', 'polo', 'hoodie', 'jacket', 'dress', 'trousers', 'pants', 'jeans', 'suit'])],
+            'garment_type' => [$partial ? 'sometimes' : 'required', Rule::in(['top', 'shirt', 'tshirt', 'polo', 'hoodie', 'jacket', 'dress', 'trousers', 'pants', 'jeans', 'suit'])],
             'unit_price' => [$prefix, 'numeric', 'min:0', 'max:9999999999'],
             'currency' => ['nullable', 'string', 'size:3'],
             'status' => ['nullable', Rule::enum(ProductStatus::class)],
+            'is_demo_asset' => ['nullable', 'boolean'],
+            'asset_source' => ['nullable', 'string', 'max:180'],
+            'asset_license' => ['nullable', 'string', 'max:180'],
             'base_image' => ['nullable', 'image', 'max:12288'],
             'texture_image' => ['nullable', 'image', 'mimes:png,webp', 'max:12288'],
 
@@ -231,22 +254,118 @@ class ProductController extends Controller
         $hasImage = filled($product->base_image_url) || filled($product->base_image_path);
         $hasTexture = filled($product->texture_image_url) || filled($product->texture_image_path);
         $localGeneratedDemo = str_contains((string) $product->description, 'Local realistic demo garment texture')
-            || str_starts_with((string) $product->sku, 'REAL-');
+            || str_starts_with((string) $product->sku, 'REAL-')
+            || $product->is_demo_asset;
+        $qa = $product->image_qa ?? [];
+        $baseQaOk = in_array(($qa['base']['status'] ?? ($hasImage ? 'ok' : 'missing')), ['ok', 'warning', 'demo'], true);
+        $textureQaOk = in_array(($qa['texture']['status'] ?? ($hasTexture ? 'ok' : 'missing')), ['ok', 'warning', 'demo'], true);
+        $metadataReady = filled($product->asset_source) && filled($product->asset_license);
+        $productionReady = $hasImage && $hasTexture && $sizesReady && $baseQaOk && $textureQaOk && $metadataReady && ! $localGeneratedDemo;
+        $aiCandidate = $hasImage && $hasTexture && $sizesReady && $baseQaOk && $textureQaOk;
+        $gate = match (true) {
+            ! $hasImage => ['missing_photo', 'Missing Photo'],
+            ! $hasTexture || ! $textureQaOk => ['needs_cutout', 'Needs Cutout'],
+            ! $sizesReady => ['needs_sizes', 'Needs Sizes'],
+            $productionReady => ['production_ready', 'Production Ready'],
+            default => ['ai_candidate', 'AI Candidate'],
+        };
 
         return [
             'image_ready' => $hasImage,
             'texture_ready' => $hasTexture,
             'sizes_ready' => $sizesReady,
-            'ai_ready' => $hasImage && $hasTexture && $sizesReady,
-            'production_asset_ready' => $hasImage && $hasTexture && ! $localGeneratedDemo,
-            'status' => match (true) {
-                ! $hasImage => 'needs_image',
-                ! $hasTexture => 'needs_texture',
-                ! $sizesReady => 'needs_sizes',
-                $localGeneratedDemo => 'demo_asset',
-                default => 'ready',
-            },
+            'qa_ready' => $baseQaOk && $textureQaOk,
+            'metadata_ready' => $metadataReady,
+            'ai_ready' => $aiCandidate,
+            'production_asset_ready' => $productionReady,
+            'status' => $gate[0],
+            'label' => $gate[1],
+            'issues' => [
+                ...($qa['base']['issues'] ?? []),
+                ...($qa['texture']['issues'] ?? []),
+                ...($localGeneratedDemo ? ['demo_asset'] : []),
+                ...(! $metadataReady ? ['missing_asset_metadata'] : []),
+            ],
         ];
+    }
+
+    private function imageQa(?UploadedFile $file, string $kind): array
+    {
+        if (! $file) {
+            return ['status' => 'missing', 'issues' => ['missing_file']];
+        }
+
+        $issues = [];
+        $size = @getimagesize($file->getRealPath());
+        $width = (int) ($size[0] ?? 0);
+        $height = (int) ($size[1] ?? 0);
+        $aspect = $height > 0 ? round($width / $height, 3) : 0.0;
+
+        if ($width < 600 || $height < 600) {
+            $issues[] = 'resolution_below_600px';
+        }
+        if ($aspect < 0.35 || $aspect > 2.2) {
+            $issues[] = 'extreme_aspect_ratio';
+        }
+
+        $alphaCoverage = null;
+        if ($kind === 'texture') {
+            $alphaCoverage = $this->alphaCoverage($file);
+            if ($alphaCoverage !== null && $alphaCoverage < 0.02) {
+                $issues[] = 'no_transparent_cutout_detected';
+            }
+            if ($alphaCoverage !== null && $alphaCoverage > 0.85) {
+                $issues[] = 'texture_mostly_transparent';
+            }
+        }
+
+        $status = 'ok';
+        if ($issues !== []) {
+            $status = $kind === 'texture' && in_array('no_transparent_cutout_detected', $issues, true) ? 'failed' : 'warning';
+        }
+
+        return [
+            'status' => $status,
+            'width' => $width,
+            'height' => $height,
+            'aspect_ratio' => $aspect,
+            'alpha_coverage' => $alphaCoverage,
+            'issues' => $issues,
+            'checked_at' => now()->toIso8601String(),
+        ];
+    }
+
+    private function alphaCoverage(UploadedFile $file): ?float
+    {
+        if (! function_exists('imagecreatefromstring')) {
+            return null;
+        }
+
+        $image = @imagecreatefromstring((string) file_get_contents($file->getRealPath()));
+        if ($image === false) {
+            return null;
+        }
+
+        $width = imagesx($image);
+        $height = imagesy($image);
+        $transparent = 0;
+        $samples = 0;
+        $stepX = max(1, (int) floor($width / 32));
+        $stepY = max(1, (int) floor($height / 32));
+
+        for ($y = 0; $y < $height; $y += $stepY) {
+            for ($x = 0; $x < $width; $x += $stepX) {
+                $rgba = imagecolorat($image, $x, $y);
+                $alpha = ($rgba & 0x7F000000) >> 24;
+                if ($alpha > 8) {
+                    $transparent++;
+                }
+                $samples++;
+            }
+        }
+        imagedestroy($image);
+
+        return $samples > 0 ? round($transparent / $samples, 4) : null;
     }
 
     private function assertCategory(int $tenantId, ?int $categoryId): void

@@ -28,5 +28,10 @@ class MirrorApiTest extends TestCase
         $token = $this->postJson('/api/mirrors/pair', ['pairing_code' => 'PAIR1234', 'device_name' => 'Kiosk'])->assertOk()->json('token');
         $this->withToken($token)->getJson('/api/mirror/catalog')
             ->assertOk()->assertJsonPath('products.0.name', 'Shirt')->assertJsonCount(1, 'products.0.sizes');
+
+        $this->withToken($token)->getJson('/api/mirror/kiosk-config')
+            ->assertOk()
+            ->assertJsonPath('config.outfit_count', 3)
+            ->assertJsonPath('config.gestures.hold_seconds', 0.75);
     }
 }

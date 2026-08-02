@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CheckoutController;
 use App\Http\Controllers\Api\MirrorAuthController;
 use App\Http\Controllers\Api\MirrorController;
+use App\Http\Controllers\Api\MirrorKioskConfigController;
 use App\Http\Controllers\Api\MirrorSessionEventController;
 use App\Http\Controllers\Api\MirrorTryOnBatchController;
 use App\Http\Controllers\Api\MirrorTryOnJobController;
@@ -25,6 +26,7 @@ Route::post('/checkout/{token}/orders', [CheckoutController::class, 'createOrder
 Route::middleware(['mirror.auth', 'throttle:240,1'])->group(function (): void {
     Route::post('/mirror/heartbeat', [MirrorController::class, 'heartbeat']);
     Route::post('/mirror/session-events', [MirrorSessionEventController::class, 'store']);
+    Route::get('/mirror/kiosk-config', MirrorKioskConfigController::class);
     Route::get('/mirror/catalog', [MirrorController::class, 'catalog']);
     Route::get('/mirrors/{mirror}/catalog', [MirrorController::class, 'catalog']);
     Route::post('/mirror/checkout-sessions', [CheckoutController::class, 'createSession']);

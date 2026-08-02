@@ -89,6 +89,11 @@ class SmartMirrorApi:
     def heartbeat(self) -> None:
         self.session.post(f"{self.base_url}/api/mirror/heartbeat", timeout=8).raise_for_status()
 
+    def kiosk_config(self) -> dict:
+        response = self.session.get(f"{self.base_url}/api/mirror/kiosk-config", timeout=8)
+        response.raise_for_status()
+        return dict(response.json().get("config") or {})
+
     def session_events(self, events: list[dict]) -> None:
         if not events:
             return

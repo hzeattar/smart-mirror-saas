@@ -29,9 +29,11 @@ class HybridState:
     jobs: list[dict] = field(default_factory=list)
     current_index: int = 0
     burst: list[BurstFrame] = field(default_factory=list)
+    target_burst_count: int = 5
     capture_started_at: float = 0.0
     countdown_started_at: float = 0.0
     presence_started_at: float = 0.0
+    gallery_started_at: float = 0.0
     last_poll_at: float = 0.0
     qr_image: np.ndarray | None = None
     qr_visible: bool = False
@@ -195,11 +197,16 @@ def draw_hybrid_hud(frame: np.ndarray, state: HybridState, gesture_label: str = 
         return
 
     if state.mode == "capture_burst":
-        cv2.putText(frame, f"CAPTURING {len(state.burst)}/5", (x0 + 22, y0 + 205), cv2.FONT_HERSHEY_SIMPLEX, 0.72, (255, 220, 72), 2, cv2.LINE_AA)
+        cv2.putText(frame, f"CAPTURING {len(state.burst)}/{max(1, state.target_burst_count)}", (x0 + 22, y0 + 205), cv2.FONT_HERSHEY_SIMPLEX, 0.72, (255, 220, 72), 2, cv2.LINE_AA)
         return
 
     if state.mode == "generating":
-        cv2.putText(frame, f"READY {len(state.ready_jobs)}/{max(1, len(state.jobs))}", (x0 + 22, y0 + 205), cv2.FONT_HERSHEY_SIMPLEX, 0.72, (255, 220, 72), 2, cv2.LINE_AA)
+        total = max(1, len(state.jobs))
+        ready_count = len(state.ready_jobs)
+        cv2.putText(frame, f"READY {ready_count}/{total}", (x0 + 22, y0 + 205), cv2.FONT_HERSHEY_SIMPLEX, 0.72, (255, 220, 72), 2, cv2.LINE_AA)
+        bar_w = panel_w - 44
+        cv2.rectangle(frame, (x0 + 22, y0 + 226), (x0 + 22 + bar_w, y0 + 240), (54, 58, 66), -1)
+        cv2.rectangle(frame, (x0 + 22, y0 + 226), (x0 + 22 + int(bar_w * ready_count / total), y0 + 240), (88, 224, 181), -1)
         return
 
     ready = state.ready_jobs
@@ -277,3 +284,38 @@ def draw_kiosk_health(frame: np.ndarray, camera_index: int, backend: str, fps: f
     for label in labels:
         cv2.putText(frame, label, (x, y), cv2.FONT_HERSHEY_SIMPLEX, 0.44, (230, 230, 230), 1, cv2.LINE_AA)
         x += max(86, len(label) * 10)
+
+
+def draw_calibration_screen(
+    frame: np.ndarray,
+    camera_index: int,
+    backend: str,
+    fps: float,
+    pose_visible: bool,
+    hand_visible: bool,
+    api_ready: bool,
+    ai_status: str,
+) -> None:
+    h, w = frame.shape[:2]
+    overlay = frame.copy()
+    cv2.rectangle(overlay, (0, 0), (w, h), (6, 12, 20), -1)
+    cv2.addWeighted(overlay, 0.78, frame, 0.22, 0, dst=frame)
+
+    x, y = 54, 72
+    cv2.putText(frame, "KIOSK CALIBRATION", (x, y), cv2.FONT_HERSHEY_SIMPLEX, 0.94, (255, 255, 255), 2, cv2.LINE_AA)
+    y += 48
+    rows = [
+        ("Camera", f"{camera_index} / {backend}", True),
+        ("FPS", f"{fps:.1f}", fps >= 18),
+        ("Lighting", lighting_score(frame), lighting_score(frame) == "OK"),
+        ("Pose", "VISIBLE" if pose_visible else "NOT VISIBLE", pose_visible),
+        ("Hand", "VISIBLE" if hand_visible else "NOT VISIBLE", hand_visible),
+        ("API", "CONNECTED" if api_ready else "OFFLINE", api_ready),
+        ("AI Queue", ai_status.upper() if ai_status else "IDLE", ai_status not in {"failed", "error"}),
+    ]
+    for label, value, ok in rows:
+        color = (88, 224, 181) if ok else (92, 207, 255) if label == "AI Queue" else (88, 130, 255)
+        cv2.circle(frame, (x + 10, y - 7), 7, color, -1, cv2.LINE_AA)
+        cv2.putText(frame, label, (x + 32, y), cv2.FONT_HERSHEY_SIMPLEX, 0.62, (178, 196, 214), 1, cv2.LINE_AA)
+        cv2.putText(frame, value, (x + 250, y), cv2.FONT_HERSHEY_SIMPLEX, 0.68, (245, 248, 252), 2, cv2.LINE_AA)
+        y += 42
