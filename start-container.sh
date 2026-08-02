@@ -40,7 +40,7 @@ fi
 
 # Railpack may cache config during the image build. Clear it before reading
 # runtime Railway variables or running migrations.
-php artisan optimize:clear || true
+CACHE_STORE=file php artisan optimize:clear || true
 
 prepare_sqlite() {
   export DB_CONNECTION=sqlite
@@ -86,7 +86,7 @@ log "Running database migrations using ${DB_CONNECTION}"
 if ! php artisan migrate --force; then
   if [[ "${DB_CONNECTION}" != "sqlite" && "${ALLOW_SQLITE_FALLBACK:-true}" == "true" ]]; then
     log "WARNING: primary database failed; falling back to SQLite"
-    php artisan optimize:clear || true
+    CACHE_STORE=file php artisan optimize:clear || true
     prepare_sqlite
     php artisan migrate --force
   else
