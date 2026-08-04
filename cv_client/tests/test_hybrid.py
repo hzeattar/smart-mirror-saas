@@ -13,7 +13,9 @@ class HybridTests(unittest.TestCase):
         dark = np.zeros((60, 80, 3), dtype=np.uint8)
         bright = np.full((60, 80, 3), 180, dtype=np.uint8)
         selected = best_burst_frame([BurstFrame(dark, 0.2), BurstFrame(bright, 0.9)])
-        self.assertTrue(np.array_equal(bright, selected))
+        self.assertIsNotNone(selected)
+        self.assertEqual(0.9, selected.score)
+        self.assertTrue(np.array_equal(bright, selected.frame))
 
     def test_frame_score_penalizes_hand_covering_torso(self):
         frame = np.zeros((120, 160, 3), dtype=np.uint8)

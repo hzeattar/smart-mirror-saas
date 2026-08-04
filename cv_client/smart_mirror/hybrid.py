@@ -34,6 +34,7 @@ class HybridState:
     countdown_started_at: float = 0.0
     presence_started_at: float = 0.0
     gallery_started_at: float = 0.0
+    last_capture_ended_at: float = 0.0
     last_poll_at: float = 0.0
     qr_image: np.ndarray | None = None
     qr_visible: bool = False
@@ -72,10 +73,10 @@ def frame_score(frame: np.ndarray, pose, hands: list | None = None) -> float:
     return max(0.0, min(1.0, score))
 
 
-def best_burst_frame(items: list[BurstFrame]) -> np.ndarray | None:
+def best_burst_frame(items: list[BurstFrame]) -> BurstFrame | None:
     if not items:
         return None
-    return max(items, key=lambda item: item.score).frame
+    return max(items, key=lambda item: item.score)
 
 
 def draw_attractor(frame: np.ndarray, now: float, presence: float = 0.0) -> None:
@@ -171,48 +172,62 @@ def draw_body_scan(frame: np.ndarray, now: float, pose=None, intensity: float = 
     cv2.addWeighted(overlay, min(0.50, 0.30 + intensity * 0.20), frame, 0.70, 0, dst=frame)
 
 
-def draw_hybrid_hud(frame: np.ndarray, state: HybridState, gesture_label: str = "", gesture_progress: float = 0.0) -> None:
+def draw_hybrid_hud(
+    frame: np.ndarray,
+    state: HybridState,
+    gesture_label: str = "",
+    gesture_progress: float = 0.0,
+    product_name: str = "",
+    price_text: str = "",
+) -> None:
     h, w = frame.shape[:2]
-    panel_w = min(470, max(340, int(w * 0.34)))
-    x0 = w - panel_w - 24
-    y0 = 34
+    ready = state.ready_jobs
+    gallery = state.mode == "gallery" and bool(ready)
+    panel_w = min(500, max(360, int(w * 0.36))) if gallery else min(620, max(410, int(w * 0.42)))
+    panel_h = h - 68 if gallery else 240
+    x0 = w - panel_w - 24 if gallery else (w - panel_w) // 2
+    y0 = 34 if gallery else 52
     overlay = frame.copy()
-    cv2.rectangle(overlay, (x0, y0), (w - 24, h - 34), (16, 18, 22), -1, lineType=cv2.LINE_AA)
+    cv2.rectangle(overlay, (x0, y0), (x0 + panel_w, y0 + panel_h), (16, 18, 22), -1, lineType=cv2.LINE_AA)
     cv2.addWeighted(overlay, 0.72, frame, 0.28, 0, dst=frame)
 
-    title = "AI OUTFIT GALLERY" if state.mode == "gallery" else "SMART MIRROR"
+    title = "AI OUTFIT GALLERY" if gallery else "SMART MIRROR"
     cv2.putText(frame, title, (x0 + 22, y0 + 46), cv2.FONT_HERSHEY_SIMPLEX, 0.76, (255, 255, 255), 2, cv2.LINE_AA)
     cv2.putText(frame, state.message or state.mode.upper(), (x0 + 22, y0 + 86), cv2.FONT_HERSHEY_SIMPLEX, 0.58, (68, 221, 255), 2, cv2.LINE_AA)
 
+    if product_name and not gallery:
+        cv2.putText(frame, product_name[:36], (x0 + 22, y0 + 126), cv2.FONT_HERSHEY_SIMPLEX, 0.54, (245, 245, 245), 1, cv2.LINE_AA)
+        if price_text:
+            cv2.putText(frame, price_text, (x0 + 22, y0 + 158), cv2.FONT_HERSHEY_SIMPLEX, 0.62, (255, 220, 72), 2, cv2.LINE_AA)
+
     if gesture_label:
         bar_w = panel_w - 44
-        cv2.putText(frame, gesture_label, (x0 + 22, y0 + 126), cv2.FONT_HERSHEY_SIMPLEX, 0.52, (235, 235, 235), 1, cv2.LINE_AA)
-        cv2.rectangle(frame, (x0 + 22, y0 + 142), (x0 + 22 + bar_w, y0 + 154), (54, 58, 66), -1)
-        cv2.rectangle(frame, (x0 + 22, y0 + 142), (x0 + 22 + int(bar_w * gesture_progress), y0 + 154), (68, 221, 255), -1)
+        gy = y0 + (126 if gallery else 176)
+        cv2.putText(frame, gesture_label, (x0 + 22, gy), cv2.FONT_HERSHEY_SIMPLEX, 0.52, (235, 235, 235), 1, cv2.LINE_AA)
+        cv2.rectangle(frame, (x0 + 22, gy + 16), (x0 + 22 + bar_w, gy + 28), (54, 58, 66), -1)
+        cv2.rectangle(frame, (x0 + 22, gy + 16), (x0 + 22 + int(bar_w * gesture_progress), gy + 28), (68, 221, 255), -1)
 
     if state.mode == "countdown":
         remaining = max(1, int(2.0 - (time.monotonic() - state.countdown_started_at)) + 1)
-        cv2.putText(frame, str(remaining), (x0 + 22, y0 + 230), cv2.FONT_HERSHEY_SIMPLEX, 2.2, (255, 220, 72), 4, cv2.LINE_AA)
-        cv2.putText(frame, "HOLD STILL", (x0 + 120, y0 + 230), cv2.FONT_HERSHEY_SIMPLEX, 0.72, (245, 245, 245), 2, cv2.LINE_AA)
+        cv2.putText(frame, str(remaining), (x0 + panel_w - 92, y0 + 132), cv2.FONT_HERSHEY_SIMPLEX, 2.0, (255, 220, 72), 4, cv2.LINE_AA)
+        cv2.putText(frame, "HOLD STILL", (x0 + panel_w - 250, y0 + 132), cv2.FONT_HERSHEY_SIMPLEX, 0.62, (245, 245, 245), 2, cv2.LINE_AA)
         return
 
     if state.mode == "capture_burst":
-        cv2.putText(frame, f"CAPTURING {len(state.burst)}/{max(1, state.target_burst_count)}", (x0 + 22, y0 + 205), cv2.FONT_HERSHEY_SIMPLEX, 0.72, (255, 220, 72), 2, cv2.LINE_AA)
+        cv2.putText(frame, f"CAPTURING {len(state.burst)}/{max(1, state.target_burst_count)}", (x0 + panel_w - 250, y0 + 132), cv2.FONT_HERSHEY_SIMPLEX, 0.62, (255, 220, 72), 2, cv2.LINE_AA)
         return
 
     if state.mode == "generating":
         total = max(1, len(state.jobs))
         ready_count = len(state.ready_jobs)
-        cv2.putText(frame, f"READY {ready_count}/{total}", (x0 + 22, y0 + 205), cv2.FONT_HERSHEY_SIMPLEX, 0.72, (255, 220, 72), 2, cv2.LINE_AA)
+        cv2.putText(frame, f"READY {ready_count}/{total}", (x0 + panel_w - 190, y0 + 132), cv2.FONT_HERSHEY_SIMPLEX, 0.62, (255, 220, 72), 2, cv2.LINE_AA)
         bar_w = panel_w - 44
-        cv2.rectangle(frame, (x0 + 22, y0 + 226), (x0 + 22 + bar_w, y0 + 240), (54, 58, 66), -1)
-        cv2.rectangle(frame, (x0 + 22, y0 + 226), (x0 + 22 + int(bar_w * ready_count / total), y0 + 240), (88, 224, 181), -1)
+        cv2.rectangle(frame, (x0 + 22, y0 + 150), (x0 + 22 + bar_w, y0 + 164), (54, 58, 66), -1)
+        cv2.rectangle(frame, (x0 + 22, y0 + 150), (x0 + 22 + int(bar_w * ready_count / total), y0 + 164), (88, 224, 181), -1)
         return
 
-    ready = state.ready_jobs
-    if state.mode != "gallery" or not ready:
-        cv2.putText(frame, "RAISE OPEN PALM", (x0 + 22, y0 + 205), cv2.FONT_HERSHEY_SIMPLEX, 0.72, (255, 220, 72), 2, cv2.LINE_AA)
-        cv2.putText(frame, "START AI SNAPSHOT", (x0 + 22, y0 + 240), cv2.FONT_HERSHEY_SIMPLEX, 0.54, (225, 225, 225), 1, cv2.LINE_AA)
+    if not gallery:
+        cv2.putText(frame, "OPEN PALM TO SCAN", (x0 + 22, y0 + 214), cv2.FONT_HERSHEY_SIMPLEX, 0.62, (255, 220, 72), 2, cv2.LINE_AA)
         return
 
     current = ready[state.current_index % len(ready)]
@@ -272,7 +287,6 @@ def lighting_score(frame: np.ndarray) -> str:
 
 
 def draw_kiosk_health(frame: np.ndarray, camera_index: int, backend: str, fps: float, pose_visible: bool, hand_visible: bool) -> None:
-    h, _w = frame.shape[:2]
     labels = [
         f"CAM {camera_index} {backend}",
         f"FPS {fps:.1f}",
@@ -280,7 +294,10 @@ def draw_kiosk_health(frame: np.ndarray, camera_index: int, backend: str, fps: f
         f"POSE {'YES' if pose_visible else 'NO'}",
         f"HAND {'YES' if hand_visible else 'NO'}",
     ]
-    x, y = 18, h - 22
+    x, y = 18, 26
+    overlay = frame.copy()
+    cv2.rectangle(overlay, (10, 5), (min(frame.shape[1] - 10, 650), 40), (16, 18, 22), -1, lineType=cv2.LINE_AA)
+    cv2.addWeighted(overlay, 0.42, frame, 0.58, 0, dst=frame)
     for label in labels:
         cv2.putText(frame, label, (x, y), cv2.FONT_HERSHEY_SIMPLEX, 0.44, (230, 230, 230), 1, cv2.LINE_AA)
         x += max(86, len(label) * 10)

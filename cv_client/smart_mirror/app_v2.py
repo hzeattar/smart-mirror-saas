@@ -63,6 +63,7 @@ class SmartMirrorAppV2(SmartMirrorApp):
             "capture_burst_count": 5,
             "capture_duration_seconds": 2.0,
             "gallery_timeout_seconds": 45.0,
+            "auto_restart_cooldown_seconds": 12.0,
             "poll_interval_seconds": 2.5,
             "pose_every_n": int(getattr(args, "pose_every_n", 3)),
             "hand_every_n": int(getattr(args, "hand_every_n", 3)),
@@ -249,7 +250,11 @@ class SmartMirrorAppV2(SmartMirrorApp):
     def _begin_hybrid_countdown(self, pose, now: float, source: str = "manual") -> None:
         if not self.hybrid:
             return
+        if source == "auto" and now - self.hybrid.last_capture_ended_at < self._cfg_float("auto_restart_cooldown_seconds", 12.0):
+            return
         if self.hybrid.active:
+            return
+        if self.hybrid.mode not in {"idle_attractor", "align_user"}:
             return
         if not self.api:
             self.hybrid.message = "PAIR MIRROR FIRST"
@@ -289,11 +294,13 @@ class SmartMirrorAppV2(SmartMirrorApp):
         best = best_burst_frame(self.hybrid.burst)
         if best is None:
             self.hybrid.mode = "idle_attractor"
-            self.hybrid.message = "CAPTURE FAILED"
+            self.hybrid.message = "READY"
+            self.hybrid.last_capture_ended_at = now
+            self.hybrid.presence_started_at = now
             self.session_log.event("capture_failed", severity="warning", product_id=self.product.id)
             return
         try:
-            snapshot_path = save_hybrid_snapshot(best, Path(self.args.data_dir) / "hybrid-inputs")
+            snapshot_path = save_hybrid_snapshot(best.frame, Path(self.args.data_dir) / "hybrid-inputs")
             products = self._hybrid_outfit_products(self._cfg_int("outfit_count", 3))
             batch = self.api.create_try_on_batch(products, snapshot_path, self._selected_size_id(selected_size))
             self.session_log.event(
@@ -319,10 +326,11 @@ class SmartMirrorAppV2(SmartMirrorApp):
         except Exception as exc:
             self.hybrid.mode = "idle_attractor"
             self.hybrid.status = "failed"
-            self.hybrid.message = "AI FAILED"
-            self.snapshot_message = "AI BATCH FAILED"
+            self.hybrid.message = "READY"
+            self.hybrid.last_capture_ended_at = now
+            self.hybrid.presence_started_at = now
+            self.snapshot_message = "AI SNAPSHOT FAILED - LIVE MODE READY"
             self.snapshot_message_until = now + 3.0
-            self.offline_mode = True
             self.session_log.event("batch_failed", severity="error", error=str(exc), product_id=self.product.id)
 
     def _poll_hybrid_batch(self, now: float) -> None:
@@ -347,7 +355,11 @@ class SmartMirrorAppV2(SmartMirrorApp):
                 self._preload_hybrid_preview()
             if self.hybrid.status == "failed" and not ready:
                 self.hybrid.mode = "idle_attractor"
-                self.hybrid.message = "AI FAILED"
+                self.hybrid.message = "READY"
+                self.hybrid.last_capture_ended_at = now
+                self.hybrid.presence_started_at = now
+                self.snapshot_message = "AI SNAPSHOT FAILED - LIVE MODE READY"
+                self.snapshot_message_until = now + 3.0
             if self.hybrid.status != old_status:
                 self.session_log.event(
                     "batch_completed" if self.hybrid.status == "completed" else ("batch_failed" if self.hybrid.status == "failed" else "batch_status"),
@@ -421,6 +433,7 @@ class SmartMirrorAppV2(SmartMirrorApp):
             self.hybrid.message = "READY"
             self.hybrid.qr_visible = False
             self.hybrid.gallery_started_at = 0.0
+            self.hybrid.last_capture_ended_at = now
             return True
         return False
 
@@ -619,6 +632,7 @@ class SmartMirrorAppV2(SmartMirrorApp):
                         self.hybrid.mode = "idle_attractor"
                         self.hybrid.message = "READY"
                         self.hybrid.qr_visible = False
+                        self.hybrid.last_capture_ended_at = now
                         self.hybrid.gallery_started_at = 0.0
                         self.session_log.event("hybrid_gallery_timeout")
 
@@ -664,38 +678,48 @@ class SmartMirrorAppV2(SmartMirrorApp):
                 if self.hybrid and self.hybrid.mode in {"idle_attractor", "align_user", "countdown", "capture_burst", "generating"}:
                     draw_body_scan(frame, now, pose, 1.0 if pose else 0.35)
 
-                self.hitboxes = draw_smart_ui(
-                    frame,
-                    SmartUiModel(
-                        product_name=self.product.name,
-                        price=self.product.formatted_price(),
-                        size_label=selected_label,
-                        confidence=confidence,
-                        product_index=self.product_index,
-                        product_count=len(self.products),
-                        pose_detected=pose is not None,
-                        calibrated=self.calibration.calibrated,
-                        auto_size=self.auto_size,
-                        previous_name=self._neighbour_name(-1),
-                        next_name=self._neighbour_name(1),
-                        gesture_label=gesture_label,
-                        gesture_progress=gesture_progress,
-                        controls_visible=self.controls_visible,
-                        snapshot_message=self.snapshot_message or ("OFFLINE MODE" if self.offline_mode else ""),
-                        cursor_visible=self.cursor_state.visible,
-                        cursor_x=self.cursor_state.x,
-                        cursor_y=self.cursor_state.y,
-                        cursor_progress=self.cursor_state.progress,
-                        cursor_hovered_action=self.cursor_state.hovered_action,
-                        ai_enabled=self.ai_tryon.enabled,
-                        ai_status=self.ai_tryon.status if self.ai_tryon.status != "idle" else "",
-                        ai_result_url=self.ai_tryon.result_url,
-                        ai_qr_image=self.ai_tryon.qr_image,
-                    ),
-                )
+                if self.hybrid:
+                    self.hitboxes = {}
+                else:
+                    self.hitboxes = draw_smart_ui(
+                        frame,
+                        SmartUiModel(
+                            product_name=self.product.name,
+                            price=self.product.formatted_price(),
+                            size_label=selected_label,
+                            confidence=confidence,
+                            product_index=self.product_index,
+                            product_count=len(self.products),
+                            pose_detected=pose is not None,
+                            calibrated=self.calibration.calibrated,
+                            auto_size=self.auto_size,
+                            previous_name=self._neighbour_name(-1),
+                            next_name=self._neighbour_name(1),
+                            gesture_label=gesture_label,
+                            gesture_progress=gesture_progress,
+                            controls_visible=self.controls_visible,
+                            snapshot_message=self.snapshot_message or ("OFFLINE MODE" if self.offline_mode else ""),
+                            cursor_visible=self.cursor_state.visible,
+                            cursor_x=self.cursor_state.x,
+                            cursor_y=self.cursor_state.y,
+                            cursor_progress=self.cursor_state.progress,
+                            cursor_hovered_action=self.cursor_state.hovered_action,
+                            ai_enabled=self.ai_tryon.enabled,
+                            ai_status=self.ai_tryon.status if self.ai_tryon.status != "idle" else "",
+                            ai_result_url=self.ai_tryon.result_url,
+                            ai_qr_image=self.ai_tryon.qr_image,
+                        ),
+                    )
 
                 if self.hybrid:
-                    draw_hybrid_hud(frame, self.hybrid, gesture_label, gesture_progress)
+                    draw_hybrid_hud(
+                        frame,
+                        self.hybrid,
+                        gesture_label,
+                        gesture_progress,
+                        self.product.name,
+                        self.product.formatted_price(),
+                    )
                     if bool(getattr(self.args, "kiosk_health_hud", True)):
                         draw_kiosk_health(frame, self.args.camera, camera_backend, self._current_fps, pose is not None, bool(hands))
                 if self.calibration_screen_visible:
