@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Admin;
 use App\Enums\MirrorStatus;
 use App\Enums\OrderStatus;
 use App\Http\Controllers\Controller;
+use App\Models\LiveRestyleSession;
 use App\Models\Mirror;
 use App\Models\MirrorSessionEvent;
 use App\Models\Order;
@@ -37,6 +38,9 @@ class DashboardController extends Controller
                 ->whereNotNull('fps')
                 ->avg('fps'), 1),
             'capture_completion_rate' => $this->captureCompletionRate($tenantId),
+            'live_restyle_sessions_today' => LiveRestyleSession::query()->forTenant($tenantId)->whereDate('started_at', today())->count(),
+            'live_restyle_seconds_today' => (int) LiveRestyleSession::query()->forTenant($tenantId)->whereDate('started_at', today())->sum('duration_seconds'),
+            'live_restyle_estimated_cost_today_usd' => round((float) LiveRestyleSession::query()->forTenant($tenantId)->whereDate('started_at', today())->sum('estimated_cost_usd'), 4),
             'failed_jobs_by_provider' => TryOnJob::query()
                 ->forTenant($tenantId)
                 ->where('status', 'failed')

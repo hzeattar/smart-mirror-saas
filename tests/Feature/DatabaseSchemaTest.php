@@ -23,6 +23,7 @@ class DatabaseSchemaTest extends TestCase
             'try_on_jobs',
             'try_on_batches',
             'mirror_session_events',
+            'live_restyle_sessions',
             'ai_evaluations',
             'ai_evaluation_items',
         ] as $table) {
@@ -122,6 +123,17 @@ class DatabaseSchemaTest extends TestCase
             'sample_image_path',
             'rating',
             'notes',
+        ]));
+        $this->assertTrue(Schema::hasColumns('live_restyle_sessions', [
+            'public_id',
+            'tenant_id',
+            'mirror_id',
+            'provider',
+            'model',
+            'status',
+            'max_seconds',
+            'duration_seconds',
+            'estimated_cost_usd',
         ]));
     }
 }

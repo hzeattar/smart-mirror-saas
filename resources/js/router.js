@@ -7,12 +7,14 @@ import MirrorsPage from './pages/MirrorsPage.vue'
 import CheckoutPage from './pages/CheckoutPage.vue'
 import TryOnJobsPage from './pages/TryOnJobsPage.vue'
 import AiEvaluationsPage from './pages/AiEvaluationsPage.vue'
+import LiveRestyleKioskPage from './pages/LiveRestyleKioskPage.vue'
 
 const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/login', component: LoginPage, meta: { guest: true } },
     { path: '/checkout/:token', component: CheckoutPage, meta: { public: true } },
+    { path: '/live-restyle', component: LiveRestyleKioskPage, meta: { public: true } },
     { path: '/', component: DashboardPage },
     { path: '/products', component: ProductManagementPage },
     { path: '/orders', component: OrderTrackingDashboard },

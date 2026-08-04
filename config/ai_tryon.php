@@ -9,4 +9,8 @@ return [
         'base_url' => env('NVIDIA_API_BASE', 'https://integrate.api.nvidia.com/v1'),
         'model' => env('NVIDIA_TRYON_MODEL'),
     ],
+    'local_vton' => [
+        'base_url' => env('LOCAL_VTON_BASE_URL', 'http://127.0.0.1:8788'),
+        'model' => env('LOCAL_VTON_MODEL', 'idm-vton'),
+    ],
 ];

@@ -25,6 +25,8 @@ Thumbs.db
 # Python client runtime
 __pycache__/
 *.py[cod]
+.smart-mirror/
+.smart-mirror-analysis/
 cv_client/.venv/
 cv_client/.smart-mirror/
 cv_client/models/*.task

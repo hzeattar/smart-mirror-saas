@@ -13,6 +13,20 @@ class MirrorSessionEventController extends Controller
 {
     public function store(Request $request): JsonResponse
     {
+        if (! $request->has('events') && $request->filled('event')) {
+            $request->merge([
+                'events' => [[
+                    'event' => $request->input('event'),
+                    'ts' => $request->input('ts'),
+                    'fps' => $request->input('fps'),
+                    'session_id' => $request->input('session_id'),
+                    'sequence' => $request->input('sequence'),
+                    'severity' => $request->input('severity'),
+                    'payload' => $request->input('payload', []),
+                ]],
+            ]);
+        }
+
         $data = $request->validate([
             'session_id' => ['nullable', 'string', 'max:80'],
             'events' => ['required', 'array', 'min:1', 'max:50'],

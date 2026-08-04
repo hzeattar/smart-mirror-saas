@@ -25,6 +25,7 @@ const profileForm = reactive({
   pose_every_n: 3,
   hand_every_n: 3,
   kiosk_health_hud: true,
+  live_restyle_enabled: false,
   gestures: {
     cooldown_seconds: 1.1,
     hold_seconds: 0.75,
@@ -87,6 +88,7 @@ function startEdit(mirror) {
     pose_every_n: Number(config.pose_every_n || 3),
     hand_every_n: Number(config.hand_every_n || 3),
     kiosk_health_hud: config.kiosk_health_hud !== false,
+    live_restyle_enabled: config.live_restyle_enabled === true,
     gestures: {
       cooldown_seconds: Number(config.gestures?.cooldown_seconds || 1.1),
       hold_seconds: Number(config.gestures?.hold_seconds || 0.75),
@@ -114,6 +116,10 @@ async function saveProfile() {
 
 function latestAi(mirror) {
   return mirror.latest_try_on_batch || mirror.latest_try_on_job || null
+}
+
+function money(value) {
+  return `$${Number(value || 0).toFixed(2)}`
 }
 
 onMounted(load)
@@ -169,6 +175,8 @@ onMounted(load)
         <div><span>Health severity</span><strong>{{ mirror.health?.severity || 'info' }}</strong></div>
         <div><span>Camera</span><strong>{{ mirror.health?.badges?.includes('No Camera') ? 'Check camera' : 'No error' }}</strong></div>
         <div><span>Profile mode</span><strong>{{ mirror.kiosk_profile?.config?.experience_mode || 'hybrid' }}</strong></div>
+        <div><span>Live restyle</span><strong>{{ mirror.live_restyle?.enabled ? 'Enabled' : 'Off' }}</strong></div>
+        <div><span>Live cost today</span><strong>{{ mirror.live_restyle?.seconds_today || 0 }}s / {{ money(mirror.live_restyle?.estimated_cost_today_usd) }}</strong></div>
       </div>
 
       <div class="ops-grid">
@@ -189,6 +197,12 @@ onMounted(load)
           <span>Session</span>
           <strong>{{ mirror.health?.session_id || '-' }}</strong>
           <small>{{ mirror.health?.severity || 'info' }}</small>
+        </div>
+        <div>
+          <span>Live restyle session</span>
+          <StatusPill v-if="mirror.live_restyle?.latest_session" :value="mirror.live_restyle.latest_session.status" />
+          <strong v-else>None</strong>
+          <small>{{ mirror.live_restyle?.global_enabled ? 'Global switch on' : 'Global switch off' }}</small>
         </div>
       </div>
 
@@ -232,6 +246,7 @@ onMounted(load)
         <label>Hold seconds<input v-model.number="profileForm.gestures.hold_seconds" type="number" step="0.05" min="0.2" max="3"></label>
         <label>Swipe distance<input v-model.number="profileForm.gestures.swipe_distance" type="number" step="0.01" min="0.05" max="0.8"></label>
         <label class="check-label"><input v-model="profileForm.kiosk_health_hud" type="checkbox"> Show health HUD</label>
+        <label class="check-label"><input v-model="profileForm.live_restyle_enabled" type="checkbox"> Live Restyle Enabled</label>
       </div>
       <div class="form-actions">
         <button type="button" class="btn btn-secondary" @click="editing = null">Cancel</button>

@@ -11,6 +11,7 @@ return [
     'pose_every_n' => (int) env('KIOSK_POSE_EVERY_N', 3),
     'hand_every_n' => (int) env('KIOSK_HAND_EVERY_N', 3),
     'kiosk_health_hud' => (bool) env('KIOSK_HEALTH_HUD', true),
+    'live_restyle_enabled' => (bool) env('KIOSK_LIVE_RESTYLE_ENABLED', false),
     'gestures' => [
         'cooldown_seconds' => (float) env('KIOSK_GESTURE_COOLDOWN_SECONDS', 1.1),
         'hold_seconds' => (float) env('KIOSK_GESTURE_HOLD_SECONDS', 0.75),

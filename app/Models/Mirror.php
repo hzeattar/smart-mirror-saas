@@ -61,6 +61,11 @@ class Mirror extends Model
         return $this->hasMany(MirrorSessionEvent::class);
     }
 
+    public function liveRestyleSessions(): HasMany
+    {
+        return $this->hasMany(LiveRestyleSession::class);
+    }
+
     public function scopeForTenant(Builder $query, int $tenantId): Builder
     {
         return $query->where('tenant_id', $tenantId);

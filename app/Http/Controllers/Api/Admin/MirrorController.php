@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\Admin;
 
 use App\Enums\MirrorStatus;
 use App\Http\Controllers\Controller;
+use App\Models\LiveRestyleSession;
 use App\Models\Mirror;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -22,6 +23,7 @@ class MirrorController extends Controller
                     'tryOnJobs' => fn ($query) => $query->latest()->limit(1),
                     'tryOnBatches' => fn ($query) => $query->latest()->limit(1),
                     'sessionEvents' => fn ($query) => $query->latest('occurred_at')->limit(1),
+                    'liveRestyleSessions' => fn ($query) => $query->latest()->limit(1),
                 ])
                 ->latest()
                 ->get()
@@ -83,6 +85,7 @@ class MirrorController extends Controller
             'config.pose_every_n' => ['sometimes', 'integer', 'min:1', 'max:6'],
             'config.hand_every_n' => ['sometimes', 'integer', 'min:1', 'max:6'],
             'config.kiosk_health_hud' => ['sometimes', 'boolean'],
+            'config.live_restyle_enabled' => ['sometimes', 'boolean'],
             'config.gestures' => ['sometimes', 'array'],
             'config.gestures.cooldown_seconds' => ['sometimes', 'numeric', 'min:0.2', 'max:5'],
             'config.gestures.hold_seconds' => ['sometimes', 'numeric', 'min:0.2', 'max:3'],
@@ -107,6 +110,7 @@ class MirrorController extends Controller
         $latestJob = $mirror->tryOnJobs->first();
         $latestBatch = $mirror->tryOnBatches->first();
         $latestEvent = $mirror->sessionEvents->first();
+        $latestLiveRestyle = $mirror->liveRestyleSessions->first();
 
         return [
             ...$mirror->toArray(),
@@ -141,6 +145,7 @@ class MirrorController extends Controller
             'session_health' => $mirror->metadata['session_health'] ?? null,
             'health' => $this->healthSummary($mirror, $latestJob, $latestBatch),
             'kiosk_profile' => $this->kioskProfile($mirror),
+            'live_restyle' => $this->liveRestyleSummary($mirror, $latestLiveRestyle),
         ];
     }
 
@@ -153,6 +158,7 @@ class MirrorController extends Controller
                 'tryOnJobs' => fn ($query) => $query->latest()->limit(1),
                 'tryOnBatches' => fn ($query) => $query->latest()->limit(1),
                 'sessionEvents' => fn ($query) => $query->latest('occurred_at')->limit(1),
+                'liveRestyleSessions' => fn ($query) => $query->latest()->limit(1),
             ])
             ->firstOrFail();
     }
@@ -218,8 +224,43 @@ class MirrorController extends Controller
             'pose_every_n',
             'hand_every_n',
             'kiosk_health_hud',
+            'live_restyle_enabled',
             'gestures',
         ]);
+    }
+
+    private function liveRestyleSummary(Mirror $mirror, ?LiveRestyleSession $latestSession): array
+    {
+        $config = $this->kioskProfile($mirror)['config'];
+        $secondsToday = LiveRestyleSession::query()
+            ->where('tenant_id', $mirror->tenant_id)
+            ->where('mirror_id', $mirror->id)
+            ->whereDate('started_at', today())
+            ->sum('duration_seconds');
+        $price = (float) config('live_restyle.price_per_second_usd', 0.02);
+        $globalEnabled = (bool) config('live_restyle.enabled', false);
+        $profileEnabled = (bool) ($config['live_restyle_enabled'] ?? false);
+
+        return [
+            'enabled' => $globalEnabled && $profileEnabled,
+            'global_enabled' => $globalEnabled,
+            'profile_enabled' => $profileEnabled,
+            'provider' => (string) config('live_restyle.provider', 'fal'),
+            'model' => (string) config('live_restyle.model', 'decart/lucy2-vton/realtime'),
+            'max_seconds' => max(1, min(20, (int) config('live_restyle.max_seconds', 20))),
+            'daily_seconds_limit' => (int) config('live_restyle.daily_seconds_limit', 120),
+            'seconds_today' => (int) $secondsToday,
+            'estimated_cost_today_usd' => round((int) $secondsToday * $price, 4),
+            'latest_session' => $latestSession ? [
+                'id' => $latestSession->public_id,
+                'status' => $latestSession->status->value,
+                'duration_seconds' => $latestSession->duration_seconds,
+                'estimated_cost_usd' => (float) $latestSession->estimated_cost_usd,
+                'error' => $latestSession->error,
+                'started_at' => $latestSession->started_at?->toIso8601String(),
+                'ended_at' => $latestSession->ended_at?->toIso8601String(),
+            ] : null,
+        ];
     }
 
     private function uniqueCode(): string

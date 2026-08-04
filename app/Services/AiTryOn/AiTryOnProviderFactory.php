@@ -11,6 +11,7 @@ class AiTryOnProviderFactory
         return match ($provider ?: config('ai_tryon.provider', 'mock')) {
             'mock' => app(MockTryOnProvider::class),
             'nvidia' => app(NvidiaTryOnProvider::class),
+            'local_vton' => app(LocalVtonProvider::class),
             default => throw new RuntimeException('Unsupported AI try-on provider.'),
         };
     }

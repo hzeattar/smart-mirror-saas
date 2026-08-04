@@ -13,6 +13,8 @@ use App\Http\Controllers\Api\CheckoutController;
 use App\Http\Controllers\Api\MirrorAuthController;
 use App\Http\Controllers\Api\MirrorController;
 use App\Http\Controllers\Api\MirrorKioskConfigController;
+use App\Http\Controllers\Api\MirrorLiveRestyleConfigController;
+use App\Http\Controllers\Api\MirrorLiveRestyleSessionController;
 use App\Http\Controllers\Api\MirrorSessionEventController;
 use App\Http\Controllers\Api\MirrorTryOnBatchController;
 use App\Http\Controllers\Api\MirrorTryOnJobController;
@@ -28,6 +30,7 @@ Route::middleware(['mirror.auth', 'throttle:240,1'])->group(function (): void {
     Route::post('/mirror/heartbeat', [MirrorController::class, 'heartbeat']);
     Route::post('/mirror/session-events', [MirrorSessionEventController::class, 'store']);
     Route::get('/mirror/kiosk-config', MirrorKioskConfigController::class);
+    Route::get('/mirror/live-restyle-config', MirrorLiveRestyleConfigController::class);
     Route::get('/mirror/catalog', [MirrorController::class, 'catalog']);
     Route::get('/mirrors/{mirror}/catalog', [MirrorController::class, 'catalog']);
     Route::post('/mirror/checkout-sessions', [CheckoutController::class, 'createSession']);
@@ -35,6 +38,10 @@ Route::middleware(['mirror.auth', 'throttle:240,1'])->group(function (): void {
     Route::middleware('throttle:10,1')->group(function (): void {
         Route::post('/mirror/try-on-batches', [MirrorTryOnBatchController::class, 'store']);
         Route::post('/mirror/try-on-jobs', [MirrorTryOnJobController::class, 'store']);
+    });
+    Route::middleware('throttle:6,1')->group(function (): void {
+        Route::post('/mirror/live-restyle-sessions', [MirrorLiveRestyleSessionController::class, 'store']);
+        Route::patch('/mirror/live-restyle-sessions/{session}', [MirrorLiveRestyleSessionController::class, 'update']);
     });
     Route::get('/mirror/try-on-batches/{batch}', [MirrorTryOnBatchController::class, 'show']);
     Route::get('/mirror/try-on-jobs/{job}', [MirrorTryOnJobController::class, 'show']);
