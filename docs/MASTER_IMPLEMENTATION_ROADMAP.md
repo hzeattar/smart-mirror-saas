@@ -47,8 +47,9 @@ Implemented on `codex/pilot-release`:
 - AI-disabled and provider-unavailable behaviour that keeps the catalogue and live overlay working.
 - Admin metrics for GPU health, heartbeat age, queue backlog, failure rate, mean latency and p95 latency.
 - Evaluation gate requiring at least 80% `good/usable`, no more than 5% technical failures and p95 no greater than 20 seconds.
-- RunPod start/stop reconciliation for 09:30–22:15 Africa/Cairo, plus minute-level readiness checks.
+- Provider readiness checks plus dormant, feature-flagged RunPod reconciliation retained only for backward compatibility.
 - A small authenticated HTTPS gateway implementation that limits body size, concurrency and request duration while keeping the NIM port private.
+- Modal and Lightning deployment tooling for the same pinned NIM/gateway contract; Modal includes a GPU heartbeat and a 09:30–22:15 Africa/Cairo warm window.
 - CI coverage for Laravel, Python, Vite/Pint, NVIDIA contract behaviour, Go gateway checks and gateway image build.
 
 Release evidence recorded on 2026-08-11:
@@ -62,16 +63,26 @@ Release evidence recorded on 2026-08-11:
 - Worker uses the database queue; the scheduler was observed running retention, provider-health and RunPod reconciliation tasks.
 - GitHub Actions jobs did not start because the repository owner's GitHub account is locked by a billing issue. This is an external release blocker and is not treated as a passing CI run.
 
+GPU account evidence recorded on 2026-08-12:
+
+- NVIDIA's hosted FLUX.2 trial authenticated and completed a generation request, but its preview edit API only accepts predefined NVIDIA images and cannot serve real try-on inputs.
+- Modal secrets, persistent cache and the pinned NIM image build were prepared; L40S deployment is blocked until a verified payment method is added. No Modal GPU ran.
+- Lightning stores the pinned NIM image and the built authenticated gateway; L40S startup is blocked until a verified payment method is added. No Lightning GPU ran.
+- Vast authenticated with a zero balance and no instance was started.
+- The active provider remains disabled for visitors; the live overlay remains the operational fallback.
+
 External validation still required before production activation:
 
 1. Resolve GitHub billing and rerun every CI job on the final release commit.
-2. Configure RunPod Secure Cloud credentials and NGC entitlement outside the repository.
-3. Deploy a pinned FLUX.2 Klein Visual NIM on an encrypted-volume L40S 48 GB pod with driver 570 or newer.
-4. Connect only the worker and scheduler to the gateway endpoint/token.
+2. Add a verified payment method and a strict spend alert to Modal only; keep Lightning and Vast unfunded initially.
+3. Deploy the prepared pinned FLUX.2 Klein Visual NIM on Modal L40S and verify the authenticated GPU heartbeat.
+4. Connect only the staging worker and scheduler to the gateway endpoint/token, then enable staging visitor AI only after a real image-edit succeeds.
 5. Run the 100-image AI benchmark and the target-camera acceptance checklist.
-6. Promote the exact tested commit and enable the passive privacy notice.
+6. If Modal misses a gate, repeat the identical benchmark on Lightning before considering a funded Vast instance.
+7. Promote the exact tested commit and enable the passive privacy notice.
 
 The NIM version must remain pinned. Review the current [NVIDIA Visual NIM support matrix](https://docs.nvidia.com/nim/visual-genai/latest/support-matrix.html) immediately before provisioning because image tags and driver requirements can change.
+The provider comparison and funding order are recorded in [GPU_RUNTIME_DECISION.md](GPU_RUNTIME_DECISION.md).
 
 ## Release gates
 

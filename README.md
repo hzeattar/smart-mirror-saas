@@ -117,6 +117,6 @@ cv_client\run_kiosk.ps1
 
 - SaaS, catalogue, mirror pairing, checkout, worker/scheduler and local CV foundation — complete.
 - Hybrid automatic-capture experience and remote AI/privacy controls — complete in code.
-- Single-mirror NVIDIA pilot — implementation complete; staging, GPU and target-hardware acceptance remain before production activation.
+- Single-mirror NVIDIA pilot — implementation complete; Modal payment verification, staging GPU benchmark and target-hardware acceptance remain before production activation. See [`docs/GPU_RUNTIME_DECISION.md`](docs/GPU_RUNTIME_DECISION.md).
 
 See [`docs/MASTER_IMPLEMENTATION_ROADMAP.md`](docs/MASTER_IMPLEMENTATION_ROADMAP.md) for the current release state and remaining gates.

@@ -44,7 +44,8 @@ Use the same 20 consented benchmark people against the same five launch products
 ## Launch decision
 
 - [ ] Railway staging uses dedicated MySQL and object storage.
-- [ ] RunPod readiness is healthy before opening time.
+- [ ] The selected GPU runtime reports a fresh authenticated heartbeat before opening time.
+- [ ] Only one GPU runtime is active and receiving visitor jobs during the benchmark.
 - [ ] The exact staging commit is selected for production.
 - [ ] `privacy_notice_mode=passive` shows both Arabic and English without blocking capture.
 - [ ] Store signage/privacy review is complete.

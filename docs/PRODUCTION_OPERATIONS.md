@@ -10,7 +10,7 @@ Deploy the release commit to staging first. Promote that exact commit only after
 
 ### Web
 
-The web service accepts captures, creates jobs and exposes kiosk/admin status. It must not possess the RunPod API key. Configure:
+The web service accepts captures, creates jobs and exposes kiosk/admin status. It must not possess any GPU control-plane or NGC key. Configure:
 
 ```env
 QUEUE_CONNECTION=database
@@ -29,28 +29,23 @@ Start with `bash start-worker.sh`. The worker is the only application service th
 ```env
 AI_TRYON_PROVIDER=nvidia
 NVIDIA_TRYON_ENDPOINT=https://GPU-GATEWAY/v1/images/edits
-NVIDIA_TRYON_HEALTH_ENDPOINT=https://GPU-GATEWAY/v1/health/ready
+NVIDIA_HEALTH_ENDPOINT=https://GPU-GATEWAY/v1/health/ready
 NVIDIA_API_KEY=GATEWAY_BEARER_TOKEN
 NVIDIA_TRYON_MODEL=PINNED_MODEL_ID
-AI_TRYON_TIMEOUT=90
+AI_TRYON_TIMEOUT_SECONDS=90
 ```
 
-The value called `NVIDIA_API_KEY` here is the private gateway bearer token, not the NGC credential. NGC credentials remain in RunPod Secrets.
+The value called `NVIDIA_API_KEY` here is the private gateway bearer token, not the NGC credential. NGC credentials remain in the selected GPU provider's secret store.
 
 ### Scheduler
 
-Start with `bash start-scheduler.sh`. It runs retention cleanup, provider health checks and RunPod state reconciliation. Configure the same gateway health endpoint/token plus:
+Start with `bash start-scheduler.sh`. It runs retention cleanup and provider health checks. Configure the same gateway health endpoint/token. RunPod reconciliation is dormant unless explicitly re-enabled for a legacy deployment:
 
 ```env
-RUNPOD_ENABLED=true
-RUNPOD_API_KEY=RUNPOD_CONTROL_PLANE_KEY
-RUNPOD_POD_ID=PINNED_POD_ID
-RUNPOD_TIMEZONE=Africa/Cairo
-RUNPOD_START_TIME=09:30
-RUNPOD_STOP_TIME=22:15
+RUNPOD_ENABLED=false
 ```
 
-The web and worker must not receive `RUNPOD_API_KEY`.
+Do not distribute Modal, Lightning, Vast or RunPod control-plane credentials to Railway services. Runtime scheduling belongs inside the GPU provider account.
 
 ## Object storage and retention
 
@@ -71,9 +66,9 @@ Use the bucket credential response's `urlStyle`: Railway's current `virtual-host
 
 Failed jobs delete their uploaded input immediately. Successful input/result media remains available for QR delivery for at most 24 hours and is removed by `php artisan tryon:purge-expired` through the scheduler.
 
-## RunPod/NVIDIA topology
+## NVIDIA runtime topology
 
-Use a Secure Cloud L40S 48 GB pod and a pinned FLUX.2 Klein Visual NIM release supported by NVIDIA. Attach an encrypted persistent volume for model cache and use driver 570 or newer when required by the pinned release.
+The active decision and funding order are in [GPU_RUNTIME_DECISION.md](GPU_RUNTIME_DECISION.md). Use one provider per environment and the same pinned FLUX.2 Klein Visual NIM release for every comparison. The preferred launch candidate is Modal L40S with a persistent model cache and a scheduled warm window. Lightning is a manual benchmark fallback; Vast is not funded unless both managed options fail a measured gate.
 
 The NIM listener is private. Place `tools/nvidia-nim-gateway` in front of it and expose only the gateway through HTTPS. Configure the gateway with:
 
@@ -85,12 +80,13 @@ GATEWAY_MAX_BODY_MB=50
 GATEWAY_MAX_CONCURRENCY=2
 ```
 
-RunPod Secrets hold `NGC_API_KEY` and `GATEWAY_TOKEN`. Neither is stored in Git or sent to the mirror device. The gateway accepts only authenticated `/v1/images/edits` and `/v1/health/ready` traffic, limits upload size/concurrency, and caps upstream response-header wait at 90 seconds.
+The GPU provider's secret store holds `NGC_API_KEY` and `GATEWAY_BEARER_TOKEN`. Neither is stored in Git, Railway web, or the mirror device. The gateway accepts only authenticated `/v1/images/edits` and `/v1/health/ready` traffic, limits upload size/concurrency, and caps upstream response-header wait at 90 seconds.
+
+Modal deployment lives in `tools/modal-nim`. It reports ready only while a fresh GPU-container heartbeat exists and schedules the warm pool for 09:30–22:15 Africa/Cairo. Keep `min_containers=0` outside the store window. Lightning's manual scripts live in `tools/lightning-nim`; stop the Studio after every benchmark session.
 
 Before opening, run:
 
 ```bash
-php artisan runpod:reconcile --dry-run
 php artisan ai:check-provider
 ```
 
@@ -112,4 +108,4 @@ Monitor the mirror, worker, scheduler and GPU during the first live day. Review 
 
 Set `KIOSK_AI_TRYON_ENABLED=false`. The next kiosk profile refresh disables new AI capture while leaving the live overlay, catalogue and QR checkout available. Do not switch visitors to `mock`.
 
-If required, then set `RUNPOD_ENABLED=false`, stop the pod from the RunPod control plane and preserve logs/metrics for diagnosis. Production promotion and RunPod provisioning require external account credentials and are intentionally not performed from source code alone.
+If required, keep `RUNPOD_ENABLED=false`, set the selected runtime's warm pool to zero or stop its Studio/instance, and preserve logs/metrics for diagnosis. Production promotion and paid GPU activation require the acceptance gates and a reviewed spend limit.
