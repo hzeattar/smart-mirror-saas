@@ -16,8 +16,13 @@ const refreshedAt = ref(null)
 
 const profileForm = reactive({
   experience_mode: 'hybrid',
+  ai_tryon_enabled: true,
+  privacy_notice_mode: 'off',
+  privacy_notice_ar: 'تُستخدم الكاميرا لتجربة الملابس، وتُحذف الصور تلقائيًا خلال 24 ساعة',
+  privacy_notice_en: 'Camera images are used for virtual try-on and deleted automatically within 24 hours.',
   outfit_count: 3,
-  auto_start_delay_seconds: 1.5,
+  auto_start_delay_seconds: 1,
+  countdown_seconds: 0.9,
   capture_burst_count: 5,
   capture_duration_seconds: 2,
   gallery_timeout_seconds: 45,
@@ -79,8 +84,13 @@ function startEdit(mirror) {
   const config = profile(mirror)
   Object.assign(profileForm, {
     experience_mode: config.experience_mode || 'hybrid',
+    ai_tryon_enabled: config.ai_tryon_enabled !== false,
+    privacy_notice_mode: config.privacy_notice_mode || 'off',
+    privacy_notice_ar: config.privacy_notice_ar || 'تُستخدم الكاميرا لتجربة الملابس، وتُحذف الصور تلقائيًا خلال 24 ساعة',
+    privacy_notice_en: config.privacy_notice_en || 'Camera images are used for virtual try-on and deleted automatically within 24 hours.',
     outfit_count: Number(config.outfit_count || 3),
-    auto_start_delay_seconds: Number(config.auto_start_delay_seconds || 1.5),
+    auto_start_delay_seconds: Number(config.auto_start_delay_seconds || 1),
+    countdown_seconds: Number(config.countdown_seconds || 0.9),
     capture_burst_count: Number(config.capture_burst_count || 5),
     capture_duration_seconds: Number(config.capture_duration_seconds || 2),
     gallery_timeout_seconds: Number(config.gallery_timeout_seconds || 45),
@@ -177,6 +187,8 @@ onMounted(load)
         <div><span>Profile mode</span><strong>{{ mirror.kiosk_profile?.config?.experience_mode || 'hybrid' }}</strong></div>
         <div><span>Live restyle</span><strong>{{ mirror.live_restyle?.enabled ? 'Enabled' : 'Off' }}</strong></div>
         <div><span>Live cost today</span><strong>{{ mirror.live_restyle?.seconds_today || 0 }}s / {{ money(mirror.live_restyle?.estimated_cost_today_usd) }}</strong></div>
+        <div><span>AI provider</span><strong>{{ mirror.ai_provider_health?.provider || '-' }} / {{ mirror.ai_provider_health?.status || 'unknown' }}</strong></div>
+        <div><span>AI checked</span><strong>{{ dateTime(mirror.ai_provider_health?.checked_at) }}</strong></div>
       </div>
 
       <div class="ops-grid">
@@ -234,8 +246,17 @@ onMounted(load)
             <option value="live">Live fallback</option>
           </select>
         </label>
+        <label>Privacy notice
+          <select v-model="profileForm.privacy_notice_mode">
+            <option value="off">Off during QA</option>
+            <option value="passive">Passive notice</option>
+          </select>
+        </label>
+        <label>Arabic notice<input v-model="profileForm.privacy_notice_ar" type="text" maxlength="180"></label>
+        <label>English notice<input v-model="profileForm.privacy_notice_en" type="text" maxlength="180"></label>
         <label>Outfit count<input v-model.number="profileForm.outfit_count" type="number" min="1" max="5"></label>
         <label>Auto-start delay<input v-model.number="profileForm.auto_start_delay_seconds" type="number" step="0.1" min="0.3" max="10"></label>
+        <label>Countdown<input v-model.number="profileForm.countdown_seconds" type="number" step="0.1" min="0.3" max="3"></label>
         <label>Burst count<input v-model.number="profileForm.capture_burst_count" type="number" min="1" max="10"></label>
         <label>Capture duration<input v-model.number="profileForm.capture_duration_seconds" type="number" step="0.1" min="0.5" max="8"></label>
         <label>Gallery timeout<input v-model.number="profileForm.gallery_timeout_seconds" type="number" min="5" max="300"></label>
@@ -246,6 +267,7 @@ onMounted(load)
         <label>Hold seconds<input v-model.number="profileForm.gestures.hold_seconds" type="number" step="0.05" min="0.2" max="3"></label>
         <label>Swipe distance<input v-model.number="profileForm.gestures.swipe_distance" type="number" step="0.01" min="0.05" max="0.8"></label>
         <label class="check-label"><input v-model="profileForm.kiosk_health_hud" type="checkbox"> Show health HUD</label>
+        <label class="check-label"><input v-model="profileForm.ai_tryon_enabled" type="checkbox"> AI Try-On Enabled</label>
         <label class="check-label"><input v-model="profileForm.live_restyle_enabled" type="checkbox"> Live Restyle Enabled</label>
       </div>
       <div class="form-actions">

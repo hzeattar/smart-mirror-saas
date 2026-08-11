@@ -7,6 +7,7 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+from PIL import Image, ImageDraw, ImageFont
 
 from .ai_tryon import make_qr_image
 
@@ -77,6 +78,69 @@ def best_burst_frame(items: list[BurstFrame]) -> BurstFrame | None:
     if not items:
         return None
     return max(items, key=lambda item: item.score)
+
+
+def person_ready_for_capture(pose, frame_shape: tuple[int, ...]) -> bool:
+    if pose is None or len(frame_shape) < 2:
+        return False
+    height, width = frame_shape[:2]
+    if width <= 0 or height <= 0:
+        return False
+    visibility = float(getattr(pose, "visibility", 0.0) or 0.0)
+    shoulders = [getattr(pose, "left_shoulder", None), getattr(pose, "right_shoulder", None)]
+    hips = [getattr(pose, "left_hip", None), getattr(pose, "right_hip", None)]
+    if visibility < 0.55 or any(point is None for point in shoulders + hips):
+        return False
+    centre_x = sum(float(point.x) for point in shoulders) / 2.0
+    shoulder_y = sum(float(point.y) for point in shoulders) / 2.0
+    hip_y = sum(float(point.y) for point in hips) / 2.0
+    shoulder_width = abs(float(shoulders[1].x) - float(shoulders[0].x))
+    return (
+        width * 0.28 <= centre_x <= width * 0.72
+        and height * 0.10 <= shoulder_y <= height * 0.62
+        and shoulder_y < hip_y <= height * 0.96
+        and shoulder_width >= width * 0.14
+    )
+
+
+def _notice_font(size: int) -> ImageFont.ImageFont:
+    candidates = [
+        Path("C:/Windows/Fonts/segoeui.ttf"),
+        Path("C:/Windows/Fonts/tahoma.ttf"),
+        Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+    ]
+    for candidate in candidates:
+        if candidate.is_file():
+            try:
+                return ImageFont.truetype(str(candidate), size=size)
+            except OSError:
+                continue
+    return ImageFont.load_default()
+
+
+def draw_privacy_notice(frame: np.ndarray, mode: str, arabic_text: str, english_text: str) -> None:
+    if str(mode).lower() != "passive":
+        return
+    height, width = frame.shape[:2]
+    panel_height = max(60, min(82, height // 4))
+    y0 = height - panel_height
+    overlay = frame.copy()
+    cv2.rectangle(overlay, (0, y0), (width, height), (12, 16, 22), -1)
+    cv2.addWeighted(overlay, 0.82, frame, 0.18, 0, frame)
+    cv2.line(frame, (0, y0), (width, y0), (88, 224, 181), 2, cv2.LINE_AA)
+
+    canvas = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+    draw = ImageDraw.Draw(canvas)
+    font = _notice_font(max(12, min(18, width // 36)))
+    margin = max(12, width // 40)
+    arabic = str(arabic_text or "").strip()
+    english = str(english_text or "").strip()
+    try:
+        draw.text((width - margin, y0 + 8), arabic, font=font, fill=(244, 247, 250), anchor="ra", direction="rtl")
+    except (KeyError, ValueError):
+        draw.text((margin, y0 + 8), arabic, font=font, fill=(244, 247, 250))
+    draw.text((margin, y0 + panel_height // 2), english, font=font, fill=(205, 216, 224))
+    frame[:] = cv2.cvtColor(np.asarray(canvas), cv2.COLOR_RGB2BGR)
 
 
 def draw_attractor(frame: np.ndarray, now: float, presence: float = 0.0) -> None:
@@ -180,6 +244,7 @@ def draw_hybrid_hud(
     product_name: str = "",
     price_text: str = "",
 ) -> None:
+    now = time.monotonic()
     h, w = frame.shape[:2]
     ready = state.ready_jobs
     gallery = state.mode == "gallery" and bool(ready)
@@ -220,10 +285,29 @@ def draw_hybrid_hud(
     if state.mode == "generating":
         total = max(1, len(state.jobs))
         ready_count = len(state.ready_jobs)
-        cv2.putText(frame, f"READY {ready_count}/{total}", (x0 + panel_w - 190, y0 + 132), cv2.FONT_HERSHEY_SIMPLEX, 0.62, (255, 220, 72), 2, cv2.LINE_AA)
+        spinner_x = x0 + panel_w - 62
+        spinner_y = y0 + 78
+        for index in range(12):
+            angle = now * 4.4 + index * (math.tau / 12)
+            strength = (index + 1) / 12
+            colour = tuple(int(channel * strength) for channel in (88, 224, 213))
+            px = int(spinner_x + math.cos(angle) * 20)
+            py = int(spinner_y + math.sin(angle) * 20)
+            cv2.circle(frame, (px, py), max(2, int(4 * strength)), colour, -1, cv2.LINE_AA)
+        phase_label = "UPLOADING" if state.status == "uploading" else "CREATING LOOKS"
+        cv2.putText(frame, phase_label, (x0 + 22, y0 + 132), cv2.FONT_HERSHEY_SIMPLEX, 0.62, (255, 220, 72), 2, cv2.LINE_AA)
+        if state.jobs:
+            cv2.putText(frame, f"READY {ready_count}/{total}", (x0 + panel_w - 190, y0 + 132), cv2.FONT_HERSHEY_SIMPLEX, 0.54, (235, 235, 235), 1, cv2.LINE_AA)
         bar_w = panel_w - 44
         cv2.rectangle(frame, (x0 + 22, y0 + 150), (x0 + 22 + bar_w, y0 + 164), (54, 58, 66), -1)
-        cv2.rectangle(frame, (x0 + 22, y0 + 150), (x0 + 22 + int(bar_w * ready_count / total), y0 + 164), (88, 224, 181), -1)
+        if state.jobs:
+            progress = ready_count / total
+        else:
+            progress = 0.18 + 0.12 * (0.5 + 0.5 * math.sin(now * 3.0))
+        cv2.rectangle(frame, (x0 + 22, y0 + 150), (x0 + 22 + int(bar_w * progress), y0 + 164), (88, 224, 181), -1)
+        shimmer_x = x0 + 22 + int(((now * 0.55) % 1.0) * max(1, bar_w - 18))
+        cv2.rectangle(frame, (shimmer_x, y0 + 150), (min(x0 + 22 + bar_w, shimmer_x + 18), y0 + 164), (170, 255, 232), -1)
+        cv2.putText(frame, "LIVE CAMERA - PLEASE HOLD YOUR POSITION", (x0 + 22, y0 + 202), cv2.FONT_HERSHEY_SIMPLEX, 0.43, (225, 232, 238), 1, cv2.LINE_AA)
         return
 
     if not gallery:

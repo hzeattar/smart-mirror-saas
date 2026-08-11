@@ -17,6 +17,9 @@ const cards = [
   ['ai_batches_today', 'AI batches', 'gallery sessions created today'],
   ['ai_completion_rate', 'AI completion', 'completed jobs percentage'],
   ['ai_average_processing_seconds', 'AI seconds', 'average completed job time'],
+  ['ai_p95_processing_seconds', 'AI p95 seconds', '95th percentile end-to-end time'],
+  ['ai_queue_backlog', 'AI queue', 'queued or processing jobs'],
+  ['ai_failure_rate_today', 'AI failures %', 'failed terminal jobs today'],
   ['average_fps_today', 'Avg FPS', 'reported by kiosk telemetry today'],
   ['capture_completion_rate', 'Capture rate', 'captures submitted after burst'],
 ]
@@ -68,7 +71,7 @@ onMounted(load)
       <ol>
         <li>Use production-ready products only.</li>
         <li>Keep one mirror online and sending telemetry.</li>
-        <li>Check mock AI batches after every kiosk run.</li>
+        <li>Confirm the NVIDIA provider is ready before store opening.</li>
         <li>Review failed jobs before store opening.</li>
       </ol>
       <router-link class="text-link" to="/mirrors">Manage devices -></router-link>

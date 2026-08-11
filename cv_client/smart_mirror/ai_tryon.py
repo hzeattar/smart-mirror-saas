@@ -23,7 +23,17 @@ class AiTryOnState:
 
     @property
     def active(self) -> bool:
-        return self.status in {"queued", "processing"}
+        return self.status in {"uploading", "queued", "processing"}
+
+
+def delete_local_capture(path: str | Path | None) -> bool:
+    if not path:
+        return False
+    try:
+        Path(path).unlink(missing_ok=True)
+        return True
+    except OSError:
+        return False
 
 
 def make_qr_image(value: str, size: int = 164) -> np.ndarray | None:

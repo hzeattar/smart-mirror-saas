@@ -82,12 +82,43 @@ class GenerateTryOnImage implements ShouldQueue
 
     private function markFailed(?Throwable $exception): void
     {
-        TryOnJob::query()->whereKey($this->tryOnJobId)->update([
+        $job = TryOnJob::query()->find($this->tryOnJobId);
+        if (! $job) {
+            return;
+        }
+
+        $job->update([
             'status' => TryOnJobStatus::Failed,
             'failed_at' => now(),
             'error' => str($exception?->getMessage() ?: 'AI try-on generation failed.')->limit(1500)->toString(),
         ]);
-        $this->syncBatch(TryOnJob::query()->whereKey($this->tryOnJobId)->value('try_on_batch_id'));
+        $this->syncBatch($job->try_on_batch_id);
+        $this->purgeFailedInput($job);
+    }
+
+    private function purgeFailedInput(TryOnJob $job): void
+    {
+        $disk = Storage::disk(config('filesystems.default'));
+        if (! $job->try_on_batch_id) {
+            $disk->delete($job->input_image_path);
+
+            return;
+        }
+
+        $batch = TryOnBatch::query()->with('jobs')->find($job->try_on_batch_id);
+        if (! $batch || $batch->jobs->isEmpty()) {
+            return;
+        }
+
+        $terminal = $batch->jobs->whereIn('status', [
+            TryOnJobStatus::Completed,
+            TryOnJobStatus::Failed,
+            TryOnJobStatus::Cancelled,
+        ])->count();
+        $completed = $batch->jobs->where('status', TryOnJobStatus::Completed)->count();
+        if ($terminal === $batch->jobs->count() && $completed === 0) {
+            $disk->delete($batch->input_image_path);
+        }
     }
 
     private function syncBatch(?int $batchId): void

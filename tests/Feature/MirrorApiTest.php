@@ -61,11 +61,21 @@ class MirrorApiTest extends TestCase
             ->assertJsonCount(4, 'products.0.sizes')
             ->assertJsonCount(1, 'products');
 
-        $this->withToken($token)->getJson('/api/mirror/kiosk-config')
+        $configResponse = $this->withToken($token)->getJson('/api/mirror/kiosk-config')
             ->assertOk()
             ->assertJsonPath('profile_version', 1)
+            ->assertJsonPath('config.ai_tryon_enabled', true)
+            ->assertJsonPath('config.ai_available', true)
+            ->assertJsonPath('config.privacy_notice_mode', 'off')
+            ->assertJsonPath('config.auto_start_delay_seconds', 1)
+            ->assertJsonPath('config.countdown_seconds', 0.9)
             ->assertJsonPath('config.outfit_count', 3)
             ->assertJsonPath('config.gestures.hold_seconds', 0.75);
+
+        $this->assertLessThanOrEqual(
+            2.5,
+            $configResponse->json('config.auto_start_delay_seconds') + $configResponse->json('config.countdown_seconds')
+        );
     }
 
     public function test_admin_updates_mirror_kiosk_profile_for_same_tenant(): void
@@ -90,6 +100,8 @@ class MirrorApiTest extends TestCase
         $this->patchJson('/api/admin/mirrors/'.$mirror->id.'/kiosk-config', [
             'config' => [
                 'outfit_count' => 5,
+                'ai_tryon_enabled' => false,
+                'privacy_notice_mode' => 'passive',
                 'pose_every_n' => 3,
                 'kiosk_health_hud' => false,
                 'gestures' => ['hold_seconds' => 0.6, 'swipe_distance' => 0.16],
@@ -97,12 +109,17 @@ class MirrorApiTest extends TestCase
         ])->assertOk()
             ->assertJsonPath('mirror.kiosk_profile.version', 2)
             ->assertJsonPath('mirror.kiosk_profile.config.outfit_count', 5)
+            ->assertJsonPath('mirror.kiosk_profile.config.ai_tryon_enabled', false)
+            ->assertJsonPath('mirror.kiosk_profile.config.privacy_notice_mode', 'passive')
             ->assertJsonPath('mirror.kiosk_profile.config.gestures.hold_seconds', 0.6);
 
         $token = $this->postJson('/api/mirrors/pair', ['pairing_code' => 'CFG12345', 'device_name' => 'Kiosk'])->assertOk()->json('token');
         $this->withToken($token)->getJson('/api/mirror/kiosk-config')
             ->assertOk()
             ->assertJsonPath('profile_version', 2)
+            ->assertJsonPath('config.ai_tryon_enabled', false)
+            ->assertJsonPath('config.ai_available', false)
+            ->assertJsonPath('config.privacy_notice_mode', 'passive')
             ->assertJsonPath('config.pose_every_n', 3)
             ->assertJsonPath('config.kiosk_health_hud', false);
     }

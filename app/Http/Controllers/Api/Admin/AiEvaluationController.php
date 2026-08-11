@@ -146,6 +146,17 @@ class AiEvaluationController extends Controller
         $items = $evaluation->items->sortBy('sort_order')->values();
         $rated = $items->whereNotNull('rating')->count();
         $accepted = $items->whereIn('rating', ['good', 'usable'])->count();
+        $completedJobs = $items->pluck('job')->filter(fn (?TryOnJob $job) => $job?->completed_at && $job?->queued_at);
+        $processingSeconds = $completedJobs
+            ->map(fn (TryOnJob $job) => round($job->queued_at->diffInMilliseconds($job->completed_at) / 1000, 3))
+            ->sort()
+            ->values();
+        $p95 = $processingSeconds->isEmpty()
+            ? null
+            : $processingSeconds[(int) max(0, ceil($processingSeconds->count() * 0.95) - 1)];
+        $usableRate = $rated > 0 ? round(($accepted / $rated) * 100, 1) : null;
+        $failureRate = $evaluation->item_count > 0 ? round(($evaluation->failed_count / $evaluation->item_count) * 100, 1) : null;
+        $allCompletedResultsRated = $evaluation->completed_count > 0 && $rated === $evaluation->completed_count;
 
         return [
             'id' => $evaluation->public_id,
@@ -159,8 +170,15 @@ class AiEvaluationController extends Controller
             'good_count' => $evaluation->good_count,
             'usable_count' => $evaluation->usable_count,
             'bad_count' => $evaluation->bad_count,
-            'usable_rate' => $rated > 0 ? round(($accepted / $rated) * 100, 1) : null,
-            'production_gate_passed' => $rated > 0 && ($accepted / $rated) >= 0.70,
+            'usable_rate' => $usableRate,
+            'failure_rate' => $failureRate,
+            'average_processing_seconds' => $processingSeconds->isEmpty() ? null : round((float) $processingSeconds->avg(), 2),
+            'p95_processing_seconds' => $p95,
+            'production_gate_passed' => $allCompletedResultsRated
+                && $usableRate >= 80
+                && $failureRate <= 5
+                && $p95 !== null
+                && $p95 <= 20,
             'items' => $items->map(fn (AiEvaluationItem $item) => [
                 'id' => $item->id,
                 'sample_image_url' => $disk->url($item->sample_image_path),
@@ -170,6 +188,9 @@ class AiEvaluationController extends Controller
                     'status' => $item->job->status->value,
                     'result_url' => $item->job->result_image_path ? url('/try-on-results/'.$item->job->public_id) : null,
                     'error' => $item->job->error,
+                    'processing_seconds' => $item->job->queued_at && $item->job->completed_at
+                        ? round($item->job->queued_at->diffInMilliseconds($item->job->completed_at) / 1000, 3)
+                        : null,
                 ] : null,
                 'rating' => $item->rating,
                 'notes' => $item->notes,

@@ -135,8 +135,9 @@ onMounted(load)
         <div>
           <p class="eyebrow">{{ evaluation.provider }}</p>
           <h2>{{ evaluation.item_count }} generated comparisons</h2>
-          <p class="muted">{{ evaluation.completed_count }}/{{ evaluation.item_count }} complete - usable rate {{ evaluation.usable_rate ?? '-' }}%</p>
-          <p class="muted">{{ evaluation.production_gate_passed ? 'Provider gate passed for this evaluation.' : 'Provider gate needs at least 70% usable or good ratings.' }}</p>
+          <p class="muted">{{ evaluation.completed_count }}/{{ evaluation.item_count }} complete - usable {{ evaluation.usable_rate ?? '-' }}% - failures {{ evaluation.failure_rate ?? '-' }}%</p>
+          <p class="muted">Latency avg {{ evaluation.average_processing_seconds ?? '-' }}s / p95 {{ evaluation.p95_processing_seconds ?? '-' }}s</p>
+          <p class="muted">{{ evaluation.production_gate_passed ? 'Provider gate passed for this evaluation.' : 'Gate requires all completed results rated, 80% usable, no more than 5% failures, and p95 at or below 20s.' }}</p>
         </div>
         <StatusPill :value="evaluation.status" />
       </div>
@@ -147,6 +148,7 @@ onMounted(load)
           <div>
             <strong>{{ item.product?.name }}</strong>
             <StatusPill :value="item.job?.status || 'queued'" />
+            <small v-if="item.job?.processing_seconds != null">{{ item.job.processing_seconds }}s end to end</small>
             <small v-if="item.job?.error" class="danger-text">{{ item.job.error }}</small>
             <div class="rating-row">
               <button class="text-btn" :class="{ active: item.rating === 'good' }" @click="rate(evaluation, item, 'good')">Good</button>

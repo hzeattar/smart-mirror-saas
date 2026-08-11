@@ -10,7 +10,7 @@ from unittest.mock import Mock
 import numpy as np
 import requests
 
-from smart_mirror.ai_tryon import AiTryOnState, make_qr_image, save_ai_snapshot
+from smart_mirror.ai_tryon import AiTryOnState, delete_local_capture, make_qr_image, save_ai_snapshot
 from smart_mirror.api_client import CatalogProduct, SmartMirrorApi
 from smart_mirror.app_v2 import SmartMirrorAppV2
 from smart_mirror.session_log import SessionLogger
@@ -58,6 +58,8 @@ class AiTryOnTests(unittest.TestCase):
             snapshot = save_ai_snapshot(frame, directory)
             self.assertTrue(snapshot.is_file())
             self.assertIsNotNone(make_qr_image("https://example.test/result.jpg"))
+            self.assertTrue(delete_local_capture(snapshot))
+            self.assertFalse(snapshot.exists())
 
     def test_session_logger_writes_jsonl(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -84,17 +86,28 @@ class AiTryOnTests(unittest.TestCase):
             frame = np.zeros((80, 100, 3), dtype=np.uint8)
 
             app._start_ai_tryon(frame, {"id": 7}, True, 10.0)
+            self.assertEqual("uploading", app.ai_tryon.status)
+            snapshot_path = app._ai_snapshot_path
+            self.assertIsNotNone(snapshot_path)
+            app._ai_submit_future.result(timeout=2)
+            app._collect_ai_network(10.1)
             self.assertEqual("queued", app.ai_tryon.status)
             self.assertEqual([(12, True, 7)], app.api.created)
+            self.assertFalse(snapshot_path.exists())
 
             app._poll_ai_tryon(13.0)
+            app._ai_poll_future.result(timeout=2)
+            app._collect_ai_network(13.1)
             self.assertEqual("completed", app.ai_tryon.status)
             self.assertEqual("https://example.test/result.jpg", app.ai_tryon.result_url)
             self.assertIsNotNone(app.ai_tryon.qr_image)
+            app._network_executor.shutdown(wait=True)
+            app._preview_executor.shutdown(wait=True)
 
     def test_active_statuses(self):
         self.assertTrue(AiTryOnState(status="queued").active)
         self.assertTrue(AiTryOnState(status="processing").active)
+        self.assertTrue(AiTryOnState(status="uploading").active)
         self.assertFalse(AiTryOnState(status="completed").active)
 
     def test_load_kiosk_config_updates_runtime_defaults(self):
@@ -106,6 +119,22 @@ class AiTryOnTests(unittest.TestCase):
             self.assertEqual(6, app.kiosk_config["capture_burst_count"])
             self.assertEqual(0.6, app.args.gesture_hold)
             self.assertEqual(7, app.kiosk_profile_version)
+
+    def test_remote_ai_switch_prevents_capture_without_blocking_live_mode(self):
+        with tempfile.TemporaryDirectory() as directory:
+            app = SmartMirrorAppV2(args(directory))
+            app.api = FakeTryOnApi()
+            app.products = [CatalogProduct(id=12, name="Jacket", texture_image_url=None, base_image_url=None, sizes=[])]
+            app.product_index = 0
+            app.kiosk_config["ai_tryon_enabled"] = False
+            app.ai_tryon.enabled = False
+
+            app._start_ai_tryon(np.zeros((80, 100, 3), dtype=np.uint8), None, True, 10.0)
+
+            self.assertIsNone(app._ai_submit_future)
+            self.assertEqual("AI TEMPORARILY UNAVAILABLE - LIVE MODE READY", app.snapshot_message)
+            app._network_executor.shutdown(wait=True)
+            app._preview_executor.shutdown(wait=True)
 
     def test_api_uses_cached_catalog_when_offline(self):
         with tempfile.TemporaryDirectory() as directory:

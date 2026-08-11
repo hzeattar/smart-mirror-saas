@@ -99,12 +99,15 @@ class TryOnJobTest extends TestCase
             'snapshot' => UploadedFile::fake()->image('snapshot.jpg', 640, 480),
         ])->assertCreated();
 
+        $inputPath = TryOnJob::query()->where('public_id', $response->json('job.id'))->value('input_image_path');
+
         $this->assertDatabaseHas('try_on_jobs', [
             'public_id' => $response->json('job.id'),
             'tenant_id' => $tenant->id,
             'mirror_id' => $mirror->id,
             'status' => TryOnJobStatus::Failed->value,
         ]);
+        Storage::disk('local')->assertMissing($inputPath);
     }
 
     public function test_admin_lists_only_tenant_try_on_jobs(): void
@@ -310,6 +313,8 @@ class TryOnJobTest extends TestCase
             'snapshot' => UploadedFile::fake()->image('snapshot.jpg', 640, 480),
         ])->assertCreated();
 
+        $inputPath = TryOnBatch::query()->where('public_id', $response->json('batch.id'))->value('input_image_path');
+
         $this->assertDatabaseHas('try_on_batches', [
             'public_id' => $response->json('batch.id'),
             'tenant_id' => $tenant->id,
@@ -317,6 +322,7 @@ class TryOnJobTest extends TestCase
             'status' => 'failed',
         ]);
         $this->assertStringNotContainsString('api_key', (string) TryOnBatch::query()->where('public_id', $response->json('batch.id'))->value('error'));
+        Storage::disk('local')->assertMissing($inputPath);
     }
 
     public function test_mirror_session_events_are_accepted_and_update_health(): void

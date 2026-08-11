@@ -1,152 +1,97 @@
-# Smart Mirror — Permanent Implementation Roadmap
+# Smart Mirror — Implementation Roadmap
 
-This file is the source of truth for the project. Every phase must update this document with completed work, verification evidence, remaining risks, and the next phase. No phase may be marked complete before code review, automated tests, local hardware acceptance where applicable, and a successful Railway deployment for cloud components.
+This document is the release source of truth. A phase is complete only after its automated checks, the applicable camera/hardware checks, and the target Railway deployment have passed.
+
+## Product direction
+
+The first release targets one physical mirror and uses a hybrid experience:
+
+- the local camera and 2D garment overlay remain responsive at all times;
+- a centred visitor is captured automatically without a blocking consent step during QA;
+- a loading animation is shown while an asynchronous NVIDIA job runs;
+- a failed or unavailable AI request falls back to the live overlay, never to a visitor-facing mock result;
+- successful results remain available through QR for no more than 24 hours;
+- failed inputs are deleted immediately.
+
+At launch, `privacy_notice_mode=passive` shows a bilingual, non-blocking camera notice. During controlled QA it remains `off`. This mode is a product setting, not a substitute for reviewing the applicable site privacy and signage requirements before public launch.
 
 ## Completed foundation
 
-### Phase 0 — Platform and device foundation — COMPLETE
-- Laravel/Vue multi-tenant SaaS foundation.
-- Product catalog, prices, size charts, mirrors and pairing.
-- Railway deployment and MySQL-backed API.
-- Local Python camera client.
-- MediaPipe Tasks Pose and Hand Landmarker integration.
-- Gesture state machine, screenshots and diagnostics.
-- Upper-body fallback with estimated lower-torso anchors.
+### Phase 0 — SaaS and device foundation — complete
 
-This foundation is not the final virtual try-on experience. The old 2D garment warp remains only as a temporary fallback and must not be presented as the finished product.
+- Multi-tenant Laravel/Vue platform, product catalogue, sizes, mirror pairing and checkout.
+- Railway web, worker, scheduler and persistent MySQL deployment.
+- Python/OpenCV/MediaPipe camera client, pose and gesture handling.
+- Photographic garment ingestion, transparent asset preparation and local live overlay.
+- Asynchronous try-on jobs, batches, polling, QR result delivery and automatic retention cleanup.
 
-## Active phase
+### Phase 1 — Hybrid kiosk experience — complete in code
 
-### Phase 1 — Real garment ingestion and Smart Gesture UI — IN PROGRESS
+- Automatic centred-person readiness and capture flow.
+- Default readiness delay of 1.0 seconds plus a 0.9-second countdown, below the 2.5-second acceptance limit.
+- Responsive camera loop while uploads and result polling run in the background.
+- Clean source-frame capture so the local overlay is not sent as the person image.
+- Loading/result gallery animation and live-overlay fallback.
+- Remote `ai_tryon_enabled`, dynamic `ai_available`, and `privacy_notice_mode` controls.
+- Passive Arabic/English notice rendering on the live camera without a blocking action.
 
-#### Implemented in branch `phase-2-real-garments-smart-ui`
-- Added `HandCursor` with index-finger pointing, smoothing, hit testing, dwell progress and duplicate-trigger cooldown.
-- Added a dedicated `point` hand gesture to the MediaPipe hand classifier.
-- Connected the cursor to the live camera loop through `SmartMirrorAppV2`.
-- Made the V2 interaction runtime the default entry point in `cv_client/main.py` on this branch.
-- Added a compact retail UI with:
-  - product carousel;
-  - previous and next product preview labels;
-  - small price and size card;
-  - automatic-size control;
-  - index-finger cursor;
-  - circular dwell confirmation;
-  - reduced screen obstruction.
-- Improved swipe navigation with:
-  - minimum horizontal distance;
-  - minimum velocity;
-  - direction-consistency checks;
-  - rejection of slow hand drift;
-  - rejection of zigzag motion;
-  - per-action cooldown profiles.
-- Added a real-garment preprocessing pipeline with:
-  - optional rembg background removal;
-  - conservative border-colour fallback;
-  - transparent-bound detection;
-  - canvas normalization;
-  - quality validation;
-  - SHA-256 and JSON metadata output.
-- Added `prepare_garment.py` command-line importer.
-- Added automatic remote-photo preparation and transparent PNG caching under `.smart-mirror/garment-cache`.
-- Added five photographic demo catalog products:
-  - T-shirt;
-  - business shirt;
-  - denim jacket;
-  - trousers;
-  - suit jacket.
-- Added EGP prices and S/M/L/XL size charts.
-- Disabled the three legacy cartoon demo products in the photographic catalog seeder.
-- Added explicit source, author and licence metadata in `docs/PHOTOGRAPHIC_GARMENT_SOURCES.json`.
-- Added automated tests for:
-  - cursor dwell selection;
-  - moving between targets;
-  - duplicate-trigger prevention;
-  - left and right swipe;
-  - slow-drift rejection;
-  - zigzag rejection;
-  - garment alpha bounds;
-  - centring and metadata generation.
-- Added category-aware temporary fallback rendering:
-  - tops anchored to shoulders and torso;
-  - trousers anchored to real hips, knees and ankles;
-  - lower-body rendering disabled for cropped upper-body poses.
-- Hardened automated validation by forcing PHPUnit to use sqlite in-memory test settings even when a host-level `DATABASE_URL` is present.
+## Active release
 
-#### Verification completed
-- 2026-07-29 local Windows: full CV unittest discovery: 26 tests passed.
-- 2026-07-29 local Windows: tracked CV Python source compilation: passed.
-- 2026-07-29 local Windows: Laravel feature tests: 6 tests / 38 assertions passed.
-- 2026-07-29 local Windows: `npm run build`: passed.
-- 2026-07-29 local Windows: `vendor/bin/pint --test`: passed.
-- `PhotographicGarmentCatalogSeeder.php`: PHP syntax passed.
-- `DatabaseSeeder.php`: PHP syntax passed.
+### Phase 2 — Single-mirror NVIDIA pilot — implementation complete, validation in progress
 
-#### Remaining work inside this phase
-- Run the complete Python test suite in the real project virtual environment on Windows.
-- Test `SmartMirrorAppV2` with the target webcam and verify:
-  - smooth cursor movement;
-  - dwell selection;
-  - no repeated accidental product changes;
-  - swipe reliability;
-  - compact UI readability.
-- Verify that all five external photographic files download successfully from the target Windows/network environment.
-- Verify first-run rembg preparation and subsequent cache reuse.
-- Add backend/admin display of source licence and prepared-asset quality metadata.
-- Split suits into jacket/trouser components when suitable assets are available.
-- Do not represent the temporary 2D fallback as photorealistic try-on. Photorealistic wearing begins in Phase 2.
-- Review the complete branch diff against `main`.
-- Merge only after local Windows acceptance.
-- Verify the exact merged commit is successfully deployed by Railway.
-- Re-test the photographic catalog against the deployed API after Railway seeding.
+Implemented on `codex/pilot-release`:
 
-#### Acceptance criteria
-- At least five photographic garment products available in the deployed demo catalog.
-- Every asset is linked to a real category, EGP price, source licence and multi-size chart.
-- Product switch can be completed by gesture without duplicate accidental triggers.
-- Hand cursor and dwell selection work without covering the body.
-- The interface shows product name, formatted price, selected/recommended size and current gesture state.
-- Automated tests cover gesture navigation, dwell selection, debounce and garment preprocessing metadata.
-- Railway build/deploy succeeds after merge.
-- Local camera acceptance confirms hand control on the target Windows device.
+- NVIDIA OpenAI-compatible image editing adapter using a person/garment Data URL image list and `b64_json` output.
+- Request timeout capped below 100 seconds.
+- Provider readiness command and cached health state exposed to the kiosk and admin.
+- AI-disabled and provider-unavailable behaviour that keeps the catalogue and live overlay working.
+- Admin metrics for GPU health, heartbeat age, queue backlog, failure rate, mean latency and p95 latency.
+- Evaluation gate requiring at least 80% `good/usable`, no more than 5% technical failures and p95 no greater than 20 seconds.
+- RunPod start/stop reconciliation for 09:30–22:15 Africa/Cairo, plus minute-level readiness checks.
+- A small authenticated HTTPS gateway implementation that limits body size, concurrency and request duration while keeping the NIM port private.
+- CI coverage for Laravel, Python, Vite/Pint, NVIDIA contract behaviour, Go gateway checks and gateway image build.
 
-## Remaining phases
+External validation still required before production activation:
 
-### Phase 2 — AI HD Virtual Try-On
-- Implemented foundation: async try-on job records, mirror create/poll endpoints, admin job list, mock provider, guarded NVIDIA provider, result media storage, QR result display, CV client AI trigger and session JSONL logs.
-- Remaining provider work: select and validate a commercially usable VTON model/provider, configure fresh provider credentials, and verify photorealistic output quality.
-- Preserve face, hair, background and garment identity in the selected provider acceptance tests.
-- Keep the current 2D overlay as live fallback while AI jobs run asynchronously.
-- Add production object storage before real customer media is retained beyond demos.
+1. Create the isolated Railway `staging` environment and its dedicated MySQL/object storage.
+2. Configure RunPod Secure Cloud credentials and NGC entitlement outside the repository.
+3. Deploy a pinned FLUX.2 Klein Visual NIM on an encrypted-volume L40S 48 GB pod with driver 570 or newer.
+4. Connect only the worker and scheduler to the gateway endpoint/token.
+5. Run the 100-image AI benchmark and the target-camera acceptance checklist.
+6. Promote the exact tested commit and enable the passive privacy notice.
 
-### Phase 3 — Near-live AI Video Try-On
-- Benchmark CatV2TON and commercially permitted alternatives.
-- Rolling frame windows and garment feature cache.
-- Optical-flow/interpolation between AI keyframes.
-- Temporal consistency, face preservation and latency management.
-- Live camera remains responsive while AI-refined frames arrive.
+The NIM version must remain pinned. Review the current [NVIDIA Visual NIM support matrix](https://docs.nvidia.com/nim/visual-genai/latest/support-matrix.html) immediately before provisioning because image tags and driver requirements can change.
 
-### Phase 4 — Accurate Size Recommendation
-- Calibrated shoulder, chest, waist, hip, torso and sleeve estimates.
-- Customer height input or depth-camera support.
-- Product-specific slim/regular/oversized profiles.
-- Explainable S/M/L/XL recommendation with confidence and alternatives.
+## Release gates
 
-### Phase 5 — Commercial Kiosk Hardening
-- Windows kiosk installer and auto-start.
-- GPU/local service health monitoring and crash recovery.
-- Offline fallback and automatic updates.
-- Privacy retention policies and automatic media deletion.
-- Multi-branch/multi-mirror monitoring, telemetry and support diagnostics.
-- QR, cart and checkout handoff.
+- CI is green for every job on the release commit.
+- A centred person starts capture within 2.5 seconds without touch or gesture.
+- Camera average is at least 20 FPS at 640×360 and no visible pause exceeds 250 ms during upload/polling.
+- 50 consecutive sessions complete on the target mirror without crash or duplicate capture.
+- The 20-person × 5-product benchmark has at least 80% good/usable results, at most 5% technical failures and at most 20-second end-to-end p95.
+- Manual review rejects identity changes, added people/text, or unacceptable face, hair, pose, colour, texture or logo drift.
+- Failed jobs delete input immediately; successful QR media works and expires within 24 hours.
+- `ai_tryon_enabled=false` is verified as an immediate rollback that preserves live overlay, catalogue and checkout.
 
-## Required phase report format
+The executable checklist is in [PILOT_ACCEPTANCE_CHECKLIST.md](PILOT_ACCEPTANCE_CHECKLIST.md).
 
-At the end of every phase, report:
-1. What was implemented.
-2. Files and services changed.
-3. Tests executed and results.
-4. Railway deployment commit and status.
-5. Local hardware test result.
-6. Known limitations.
-7. All remaining phases.
-8. Exact scope of the next phase.
+## Later phases
+
+### Phase 3 — Near-live AI video
+
+- Temporal consistency, rolling frames, garment feature cache and interpolation.
+- Must not block the one-mirror image pilot.
+
+### Phase 4 — Calibrated measurements
+
+- Camera/depth calibration, product-specific fit profiles and explainable recommendations.
+
+### Phase 5 — Commercial kiosk and expansion
+
+- Windows installer, auto-update and watchdog.
+- Multi-branch/multi-mirror operations and support tooling.
+- Add a second mirror only after reviewing one full week of pilot telemetry.
+
+## Required phase report
+
+Each phase report must include implementation, changed services, automated results, Railway commit/status, hardware result, known limits, rollback state and the next exact phase.

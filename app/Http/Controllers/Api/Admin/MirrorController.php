@@ -6,6 +6,7 @@ use App\Enums\MirrorStatus;
 use App\Http\Controllers\Controller;
 use App\Models\LiveRestyleSession;
 use App\Models\Mirror;
+use App\Services\AiTryOn\AiProviderHealth;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
@@ -14,6 +15,8 @@ use Illuminate\Validation\Rule;
 
 class MirrorController extends Controller
 {
+    public function __construct(private readonly AiProviderHealth $aiHealth) {}
+
     public function index(Request $request): JsonResponse
     {
         return response()->json([
@@ -76,8 +79,13 @@ class MirrorController extends Controller
         $data = $request->validate([
             'config' => ['required', 'array'],
             'config.experience_mode' => ['sometimes', Rule::in(['hybrid', 'live'])],
+            'config.ai_tryon_enabled' => ['sometimes', 'boolean'],
+            'config.privacy_notice_mode' => ['sometimes', Rule::in(['off', 'passive'])],
+            'config.privacy_notice_ar' => ['sometimes', 'string', 'max:180'],
+            'config.privacy_notice_en' => ['sometimes', 'string', 'max:180'],
             'config.outfit_count' => ['sometimes', 'integer', 'min:1', 'max:5'],
             'config.auto_start_delay_seconds' => ['sometimes', 'numeric', 'min:0.3', 'max:10'],
+            'config.countdown_seconds' => ['sometimes', 'numeric', 'min:0.3', 'max:3'],
             'config.capture_burst_count' => ['sometimes', 'integer', 'min:1', 'max:10'],
             'config.capture_duration_seconds' => ['sometimes', 'numeric', 'min:0.5', 'max:8'],
             'config.gallery_timeout_seconds' => ['sometimes', 'numeric', 'min:5', 'max:300'],
@@ -144,6 +152,7 @@ class MirrorController extends Controller
             ]),
             'session_health' => $mirror->metadata['session_health'] ?? null,
             'health' => $this->healthSummary($mirror, $latestJob, $latestBatch),
+            'ai_provider_health' => $this->aiHealth->snapshot(),
             'kiosk_profile' => $this->kioskProfile($mirror),
             'live_restyle' => $this->liveRestyleSummary($mirror, $latestLiveRestyle),
         ];
@@ -201,13 +210,16 @@ class MirrorController extends Controller
         $legacy = is_array($mirror->metadata['kiosk_config'] ?? null) ? $mirror->metadata['kiosk_config'] : [];
         $config = is_array($profile['config'] ?? null) ? $profile['config'] : $legacy;
 
+        $merged = [
+            ...config('kiosk'),
+            ...$config,
+        ];
+        $merged['ai_available'] = (bool) ($merged['ai_tryon_enabled'] ?? true) && (bool) $this->aiHealth->snapshot()['available'];
+
         return [
             'version' => (int) ($profile['version'] ?? 1),
             'updated_at' => $profile['updated_at'] ?? $mirror->updated_at?->toIso8601String(),
-            'config' => [
-                ...config('kiosk'),
-                ...$config,
-            ],
+            'config' => $merged,
         ];
     }
 
@@ -215,8 +227,13 @@ class MirrorController extends Controller
     {
         return Arr::only($config, [
             'experience_mode',
+            'ai_tryon_enabled',
+            'privacy_notice_mode',
+            'privacy_notice_ar',
+            'privacy_notice_en',
             'outfit_count',
             'auto_start_delay_seconds',
+            'countdown_seconds',
             'capture_burst_count',
             'capture_duration_seconds',
             'gallery_timeout_seconds',

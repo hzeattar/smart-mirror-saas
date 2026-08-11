@@ -31,7 +31,7 @@ Change these credentials immediately in any public environment.
 
 ## Railway
 
-The repository contains `Dockerfile`, `railway.json`, and `scripts/start.sh`. Add a PostgreSQL service for persistent production data and define its `DB_*` variables (or `DATABASE_URL` if your Laravel database configuration maps it). Set at minimum:
+The repository contains `Dockerfile`, `railway.json`, and `scripts/start.sh`. Add a MySQL service for persistent production data and define its `DB_*` variables (or `DATABASE_URL` if your Laravel database configuration maps it). Set at minimum:
 
 ```env
 APP_ENV=production
@@ -83,7 +83,7 @@ The PHP Railway image does not install the large Python vision stack. In product
 
 ## AI try-on jobs
 
-The mirror can create asynchronous AI try-on jobs and outfit batches without blocking the live camera. The default provider is `mock`, which stores a generated result for end-to-end testing. NVIDIA integration is isolated behind the provider layer and only runs when `AI_TRYON_PROVIDER=nvidia`, `NVIDIA_API_KEY`, and `NVIDIA_TRYON_MODEL` are configured.
+The mirror can create asynchronous AI try-on jobs and outfit batches without blocking the live camera. The `mock` provider is for automated/staging flow tests only and is never a visitor fallback. NVIDIA integration is isolated behind an authenticated image-editing gateway and runs only when `AI_TRYON_PROVIDER=nvidia`, `NVIDIA_API_KEY`, `NVIDIA_TRYON_ENDPOINT`, and `NVIDIA_TRYON_MODEL` are configured. Provider health dynamically controls `ai_available`; `KIOSK_AI_TRYON_ENABLED=false` is the immediate operational rollback.
 
 - `POST /api/mirror/try-on-jobs`
 - `GET /api/mirror/try-on-jobs/{job}`
@@ -93,7 +93,7 @@ The mirror can create asynchronous AI try-on jobs and outfit batches without blo
 - `GET /api/admin/try-on-batches`
 - `GET /api/admin/try-on-jobs`
 
-Expired try-on media can be purged with `php artisan tryon:purge-expired`. Do not commit provider API keys; configure them as environment variables. Production S3, queue worker, scheduler and NVIDIA activation notes are in [`docs/PRODUCTION_OPERATIONS.md`](docs/PRODUCTION_OPERATIONS.md).
+Expired try-on media can be purged with `php artisan tryon:purge-expired`. Do not commit provider API keys; configure them as environment variables. Production S3, queue worker, scheduler and NVIDIA activation notes are in [`docs/PRODUCTION_OPERATIONS.md`](docs/PRODUCTION_OPERATIONS.md). The target-camera and 100-image release gates are in [`docs/PILOT_ACCEPTANCE_CHECKLIST.md`](docs/PILOT_ACCEPTANCE_CHECKLIST.md).
 
 ## Computer vision client
 
@@ -115,7 +115,8 @@ cv_client\run_kiosk.ps1
 
 ## Current delivery status
 
-- Phase 1: database architecture and Eloquent relationships — complete.
-- Phase 2: Laravel REST API, mirror auth, catalog, orders and image-processing queue — complete.
-- Phase 3: optimized OpenCV + MediaPipe client with calibration and overlay — complete.
-- Phase 4: Vue Composition API product management and real-time order dashboard — complete.
+- SaaS, catalogue, mirror pairing, checkout, worker/scheduler and local CV foundation — complete.
+- Hybrid automatic-capture experience and remote AI/privacy controls — complete in code.
+- Single-mirror NVIDIA pilot — implementation complete; staging, GPU and target-hardware acceptance remain before production activation.
+
+See [`docs/MASTER_IMPLEMENTATION_ROADMAP.md`](docs/MASTER_IMPLEMENTATION_ROADMAP.md) for the current release state and remaining gates.

@@ -2,8 +2,14 @@
 
 return [
     'experience_mode' => env('KIOSK_EXPERIENCE_MODE', 'hybrid'),
+    'ai_tryon_enabled' => (bool) env('KIOSK_AI_TRYON_ENABLED', true),
+    'ai_available' => true,
+    'privacy_notice_mode' => env('KIOSK_PRIVACY_NOTICE_MODE', 'off'),
+    'privacy_notice_ar' => env('KIOSK_PRIVACY_NOTICE_AR', 'تُستخدم الكاميرا لتجربة الملابس، وتُحذف الصور تلقائيًا خلال 24 ساعة'),
+    'privacy_notice_en' => env('KIOSK_PRIVACY_NOTICE_EN', 'Camera images are used for virtual try-on and deleted automatically within 24 hours.'),
     'outfit_count' => (int) env('KIOSK_OUTFIT_COUNT', 3),
-    'auto_start_delay_seconds' => (float) env('KIOSK_AUTO_START_DELAY_SECONDS', 1.5),
+    'auto_start_delay_seconds' => (float) env('KIOSK_AUTO_START_DELAY_SECONDS', 1.0),
+    'countdown_seconds' => (float) env('KIOSK_COUNTDOWN_SECONDS', 0.9),
     'capture_burst_count' => (int) env('KIOSK_CAPTURE_BURST_COUNT', 5),
     'capture_duration_seconds' => (float) env('KIOSK_CAPTURE_DURATION_SECONDS', 2.0),
     'gallery_timeout_seconds' => (float) env('KIOSK_GALLERY_TIMEOUT_SECONDS', 45),

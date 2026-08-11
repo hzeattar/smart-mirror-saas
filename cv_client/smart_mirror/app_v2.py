@@ -7,7 +7,7 @@ from pathlib import Path
 import cv2
 
 from .app import SmartMirrorApp
-from .ai_tryon import AiTryOnState, make_qr_image, save_ai_snapshot
+from .ai_tryon import AiTryOnState, delete_local_capture, make_qr_image, save_ai_snapshot
 from .camera import open_camera
 from .fitting import estimate_body_measurements, fit_confidence, recommend_size
 from .gestures import GestureEngine, GestureStatus
@@ -20,7 +20,9 @@ from .hybrid import (
     draw_body_scan,
     draw_hybrid_hud,
     draw_kiosk_health,
+    draw_privacy_notice,
     frame_score,
+    person_ready_for_capture,
     save_hybrid_snapshot,
 )
 from .interaction import CursorState, HandCursor
@@ -40,7 +42,8 @@ class SmartMirrorAppV2(SmartMirrorApp):
         super().__init__(args)
         self.cursor_state = CursorState()
         self.experience = str(getattr(args, "experience", "live") or "live").lower()
-        self.ai_tryon = AiTryOnState(enabled=bool(getattr(args, "ai_tryon", False)) or self.experience == "hybrid")
+        self._ai_requested = bool(getattr(args, "ai_tryon", False)) or self.experience == "hybrid"
+        self.ai_tryon = AiTryOnState(enabled=self._ai_requested)
         self.hybrid = HybridState() if self.experience == "hybrid" else None
         self.session_log = SessionLogger(args.data_dir, bool(getattr(args, "session_log", True)))
         self._frame_count = 0
@@ -53,13 +56,26 @@ class SmartMirrorAppV2(SmartMirrorApp):
         self._last_hands = []
         self._preview_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="preview")
         self._preview_futures = {}
+        self._network_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="tryon-network")
+        self._ai_submit_future = None
+        self._ai_poll_future = None
+        self._ai_snapshot_path: Path | None = None
+        self._hybrid_submit_future = None
+        self._hybrid_poll_future = None
+        self._hybrid_snapshot_path: Path | None = None
         self.kiosk_profile_version = 0
         self._last_kiosk_config_check_at = 0.0
         self.offline_mode = False
         self.kiosk_config = {
             "experience_mode": self.experience,
+            "ai_tryon_enabled": True,
+            "ai_available": True,
+            "privacy_notice_mode": "off",
+            "privacy_notice_ar": "تُستخدم الكاميرا لتجربة الملابس، وتُحذف الصور تلقائيًا خلال 24 ساعة",
+            "privacy_notice_en": "Camera images are used for virtual try-on and deleted automatically within 24 hours.",
             "outfit_count": 3,
-            "auto_start_delay_seconds": 1.5,
+            "auto_start_delay_seconds": 1.0,
+            "countdown_seconds": 0.9,
             "capture_burst_count": 5,
             "capture_duration_seconds": 2.0,
             "gallery_timeout_seconds": 45.0,
@@ -116,6 +132,7 @@ class SmartMirrorAppV2(SmartMirrorApp):
         self.args.gesture_hold = float(gestures.get("hold_seconds", getattr(self.args, "gesture_hold", 0.75)))
         self.args.swipe_distance = float(gestures.get("swipe_distance", getattr(self.args, "swipe_distance", 0.20)))
         self.args.kiosk_health_hud = bool(self.kiosk_config.get("kiosk_health_hud", getattr(self.args, "kiosk_health_hud", True)))
+        self.ai_tryon.enabled = self._ai_requested and bool(self.kiosk_config.get("ai_tryon_enabled", True))
         mode = str(self.kiosk_config.get("experience_mode") or self.experience).lower()
         if mode in {"hybrid", "live"} and mode != self.experience:
             self.experience = mode
@@ -159,6 +176,16 @@ class SmartMirrorAppV2(SmartMirrorApp):
         except (TypeError, ValueError):
             return default
 
+    def _ai_ready(self) -> bool:
+        return self.ai_tryon.enabled and bool(self.kiosk_config.get("ai_available", True))
+
+    def _show_ai_unavailable(self, now: float) -> None:
+        self.snapshot_message = "AI TEMPORARILY UNAVAILABLE - LIVE MODE READY"
+        self.snapshot_message_until = now + 3.0
+        if self.hybrid:
+            self.hybrid.message = "AI TEMPORARILY UNAVAILABLE"
+        self.session_log.event("ai_unavailable", severity="warning")
+
     def _selected_size_id(self, selected_size: dict | None) -> int | None:
         if not selected_size:
             return None
@@ -169,7 +196,8 @@ class SmartMirrorAppV2(SmartMirrorApp):
             return None
 
     def _start_ai_tryon(self, frame, selected_size: dict | None, garment_rendered: bool, now: float) -> None:
-        if not self.ai_tryon.enabled:
+        if not self._ai_ready():
+            self._show_ai_unavailable(now)
             return
         if self.ai_tryon.active:
             self.snapshot_message = "AI TRY-ON ALREADY RUNNING"
@@ -185,62 +213,101 @@ class SmartMirrorAppV2(SmartMirrorApp):
             return
 
         try:
-            snapshot_path = save_ai_snapshot(frame, Path(self.args.data_dir) / "ai-tryon-inputs")
-            job = self.api.create_try_on_job(self.product, snapshot_path, self._selected_size_id(selected_size))
-            self.ai_tryon.status = str(job.get("status") or "queued")
-            self.ai_tryon.job_id = str(job.get("id") or "")
-            self.ai_tryon.result_url = str(job.get("result_url") or "")
-            self.ai_tryon.error = ""
-            self.ai_tryon.requested_at = now
-            self.ai_tryon.last_poll_at = 0.0
+            self._ai_snapshot_path = save_ai_snapshot(frame, Path(self.args.data_dir) / "ai-tryon-inputs")
+        except Exception as exc:
+            self._fail_ai_tryon(exc, now, "ai_tryon_capture")
+            return
+
+        product = self.product
+        self.ai_tryon.status = "uploading"
+        self.ai_tryon.job_id = ""
+        self.ai_tryon.result_url = ""
+        self.ai_tryon.error = ""
+        self.ai_tryon.requested_at = now
+        self.ai_tryon.last_poll_at = 0.0
+        self.ai_tryon.qr_image = None
+        self.snapshot_message = "UPLOADING AI SNAPSHOT"
+        self.snapshot_message_until = now + 2.0
+        self._ai_submit_future = self._network_executor.submit(
+            self.api.create_try_on_job,
+            product,
+            self._ai_snapshot_path,
+            self._selected_size_id(selected_size),
+        )
+        self.session_log.event("ai_tryon_upload_started", product_id=product.id, product_name=product.name)
+
+    def _apply_ai_job(self, job: dict, now: float) -> None:
+        old_status = self.ai_tryon.status
+        self.ai_tryon.status = str(job.get("status") or self.ai_tryon.status)
+        self.ai_tryon.job_id = str(job.get("id") or self.ai_tryon.job_id)
+        self.ai_tryon.result_url = str(job.get("result_url") or "")
+        self.ai_tryon.error = str(job.get("error") or "")
+        if self.ai_tryon.result_url and self.ai_tryon.qr_image is None:
             self.ai_tryon.qr_image = make_qr_image(self.ai_tryon.result_url)
-            self.snapshot_message = "AI TRY-ON QUEUED"
-            self.snapshot_message_until = now + 2.0
+        if self.ai_tryon.status != old_status:
             self.session_log.event(
-                "ai_tryon_created",
+                "ai_tryon_status",
                 job_id=self.ai_tryon.job_id,
                 status=self.ai_tryon.status,
-                product_id=self.product.id,
-                product_name=self.product.name,
+                error=self.ai_tryon.error,
             )
-        except Exception as exc:
-            self.ai_tryon.status = "failed"
-            self.ai_tryon.error = str(exc)
+        if self.ai_tryon.status == "completed":
+            self.snapshot_message = "AI RESULT READY"
+            self.snapshot_message_until = now + 3.0
+        elif self.ai_tryon.status == "failed":
             self.snapshot_message = "AI TRY-ON FAILED"
-            self.snapshot_message_until = now + 2.5
-            self.offline_mode = True
-            self.session_log.event("api_error", severity="error", source="ai_tryon_create", error=str(exc), product_id=self.product.id)
+            self.snapshot_message_until = now + 3.0
+
+    def _fail_ai_tryon(self, exc: Exception, now: float, source: str) -> None:
+        delete_local_capture(self._ai_snapshot_path)
+        self._ai_snapshot_path = None
+        self.ai_tryon.status = "failed"
+        self.ai_tryon.error = str(exc)
+        self.snapshot_message = "AI TRY-ON FAILED"
+        self.snapshot_message_until = now + 2.5
+        self.offline_mode = True
+        self.session_log.event("api_error", severity="error", source=source, error=str(exc), product_id=self.product.id)
+
+    def _collect_ai_network(self, now: float) -> None:
+        if self._ai_submit_future and self._ai_submit_future.done():
+            future = self._ai_submit_future
+            self._ai_submit_future = None
+            delete_local_capture(self._ai_snapshot_path)
+            self._ai_snapshot_path = None
+            try:
+                job = future.result()
+                self._apply_ai_job(job, now)
+                if self.ai_tryon.status not in {"completed", "failed"}:
+                    self.snapshot_message = "AI TRY-ON QUEUED"
+                    self.snapshot_message_until = now + 2.0
+                self.session_log.event(
+                    "ai_tryon_created",
+                    job_id=self.ai_tryon.job_id,
+                    status=self.ai_tryon.status,
+                    product_id=self.product.id,
+                    product_name=self.product.name,
+                )
+            except Exception as exc:
+                self._fail_ai_tryon(exc, now, "ai_tryon_create")
+
+        if self._ai_poll_future and self._ai_poll_future.done():
+            future = self._ai_poll_future
+            self._ai_poll_future = None
+            try:
+                self._apply_ai_job(future.result(), now)
+            except Exception as exc:
+                self.offline_mode = True
+                self.session_log.event("api_error", severity="warning", source="ai_tryon_poll", job_id=self.ai_tryon.job_id, error=str(exc))
 
     def _poll_ai_tryon(self, now: float) -> None:
         if not self.ai_tryon.enabled or not self.ai_tryon.active or not self.ai_tryon.job_id or not self.api:
             return
         if now - self.ai_tryon.last_poll_at < 2.5:
             return
+        if self._ai_poll_future is not None:
+            return
         self.ai_tryon.last_poll_at = now
-        try:
-            job = self.api.try_on_job(self.ai_tryon.job_id)
-            old_status = self.ai_tryon.status
-            self.ai_tryon.status = str(job.get("status") or self.ai_tryon.status)
-            self.ai_tryon.result_url = str(job.get("result_url") or "")
-            self.ai_tryon.error = str(job.get("error") or "")
-            if self.ai_tryon.result_url and self.ai_tryon.qr_image is None:
-                self.ai_tryon.qr_image = make_qr_image(self.ai_tryon.result_url)
-            if self.ai_tryon.status != old_status:
-                self.session_log.event(
-                    "ai_tryon_status",
-                    job_id=self.ai_tryon.job_id,
-                    status=self.ai_tryon.status,
-                    error=self.ai_tryon.error,
-                )
-            if self.ai_tryon.status == "completed":
-                self.snapshot_message = "AI RESULT READY"
-                self.snapshot_message_until = now + 3.0
-            elif self.ai_tryon.status == "failed":
-                self.snapshot_message = "AI TRY-ON FAILED"
-                self.snapshot_message_until = now + 3.0
-        except Exception as exc:
-            self.offline_mode = True
-            self.session_log.event("api_error", severity="warning", source="ai_tryon_poll", job_id=self.ai_tryon.job_id, error=str(exc))
+        self._ai_poll_future = self._network_executor.submit(self.api.try_on_job, self.ai_tryon.job_id)
 
     def _hybrid_outfit_products(self, count: int = 3) -> list:
         if not self.products:
@@ -249,6 +316,9 @@ class SmartMirrorAppV2(SmartMirrorApp):
 
     def _begin_hybrid_countdown(self, pose, now: float, source: str = "manual") -> None:
         if not self.hybrid:
+            return
+        if not self._ai_ready():
+            self._show_ai_unavailable(now)
             return
         if source == "auto" and now - self.hybrid.last_capture_ended_at < self._cfg_float("auto_restart_cooldown_seconds", 12.0):
             return
@@ -300,38 +370,101 @@ class SmartMirrorAppV2(SmartMirrorApp):
             self.session_log.event("capture_failed", severity="warning", product_id=self.product.id)
             return
         try:
-            snapshot_path = save_hybrid_snapshot(best.frame, Path(self.args.data_dir) / "hybrid-inputs")
-            products = self._hybrid_outfit_products(self._cfg_int("outfit_count", 3))
-            batch = self.api.create_try_on_batch(products, snapshot_path, self._selected_size_id(selected_size))
-            self.session_log.event(
-                "capture_completed",
-                burst_count=len(self.hybrid.burst),
-                best_score=round(float(best.score), 4),
-                snapshot_path=str(snapshot_path),
-            )
-            self.hybrid.mode = "generating"
-            self.hybrid.status = str(batch.get("status") or "queued")
-            self.hybrid.batch_id = str(batch.get("id") or "")
-            self.hybrid.jobs = list(batch.get("jobs") or [])
-            self.hybrid.current_index = 0
-            self.hybrid.last_poll_at = 0.0
-            self.hybrid.gallery_started_at = 0.0
-            self.hybrid.message = "AI PROCESSING"
-            self.session_log.event(
-                "batch_created",
-                batch_id=self.hybrid.batch_id,
-                product_ids=[product.id for product in products],
-                status=self.hybrid.status,
-            )
+            self._hybrid_snapshot_path = save_hybrid_snapshot(best.frame, Path(self.args.data_dir) / "hybrid-inputs")
         except Exception as exc:
-            self.hybrid.mode = "idle_attractor"
-            self.hybrid.status = "failed"
-            self.hybrid.message = "READY"
-            self.hybrid.last_capture_ended_at = now
-            self.hybrid.presence_started_at = now
-            self.snapshot_message = "AI SNAPSHOT FAILED - LIVE MODE READY"
-            self.snapshot_message_until = now + 3.0
-            self.session_log.event("batch_failed", severity="error", error=str(exc), product_id=self.product.id)
+            self.hybrid.burst.clear()
+            self._fail_hybrid_batch(exc, now, "capture_save")
+            return
+
+        products = self._hybrid_outfit_products(self._cfg_int("outfit_count", 3))
+        burst_count = len(self.hybrid.burst)
+        self.hybrid.burst.clear()
+        self.hybrid.mode = "generating"
+        self.hybrid.status = "uploading"
+        self.hybrid.batch_id = ""
+        self.hybrid.jobs = []
+        self.hybrid.current_index = 0
+        self.hybrid.last_poll_at = 0.0
+        self.hybrid.gallery_started_at = 0.0
+        self.hybrid.message = "UPLOADING BEST FRAME"
+        self._hybrid_submit_future = self._network_executor.submit(
+            self.api.create_try_on_batch,
+            products,
+            self._hybrid_snapshot_path,
+            self._selected_size_id(selected_size),
+        )
+        self.session_log.event(
+            "capture_completed",
+            burst_count=burst_count,
+            best_score=round(float(best.score), 4),
+            snapshot_path=str(self._hybrid_snapshot_path),
+        )
+        self.session_log.event("batch_upload_started", product_ids=[product.id for product in products])
+
+    def _fail_hybrid_batch(self, exc: Exception, now: float, source: str) -> None:
+        delete_local_capture(self._hybrid_snapshot_path)
+        self._hybrid_snapshot_path = None
+        if not self.hybrid:
+            return
+        self.hybrid.mode = "idle_attractor"
+        self.hybrid.status = "failed"
+        self.hybrid.message = "READY"
+        self.hybrid.last_capture_ended_at = now
+        self.hybrid.presence_started_at = now
+        self.snapshot_message = "AI SNAPSHOT FAILED - LIVE MODE READY"
+        self.snapshot_message_until = now + 3.0
+        self.session_log.event("batch_failed", severity="error", source=source, error=str(exc), product_id=self.product.id)
+
+    def _apply_hybrid_batch(self, batch: dict, now: float) -> None:
+        if not self.hybrid:
+            return
+        old_status = self.hybrid.status
+        self.hybrid.status = str(batch.get("status") or self.hybrid.status)
+        self.hybrid.batch_id = str(batch.get("id") or self.hybrid.batch_id)
+        self.hybrid.jobs = list(batch.get("jobs") or [])
+        ready = self.hybrid.ready_jobs
+        self.hybrid.message = f"AI READY {len(ready)}/{max(1, len(self.hybrid.jobs))}" if ready else "AI PROCESSING"
+        if ready:
+            if self.hybrid.mode != "gallery":
+                self.hybrid.gallery_started_at = now
+            self.hybrid.mode = "gallery"
+            self._preload_hybrid_preview()
+        elif self.hybrid.status == "failed":
+            self._fail_hybrid_batch(RuntimeError(str(batch.get("error") or "AI batch failed")), now, "batch_status")
+            return
+        if self.hybrid.status != old_status:
+            self.session_log.event(
+                "batch_completed" if self.hybrid.status == "completed" else ("batch_failed" if self.hybrid.status == "failed" else "batch_status"),
+                batch_id=self.hybrid.batch_id,
+                status=self.hybrid.status,
+                ready=len(ready),
+            )
+
+    def _collect_hybrid_network(self, now: float) -> None:
+        if self._hybrid_submit_future and self._hybrid_submit_future.done():
+            future = self._hybrid_submit_future
+            self._hybrid_submit_future = None
+            delete_local_capture(self._hybrid_snapshot_path)
+            self._hybrid_snapshot_path = None
+            try:
+                batch = future.result()
+                self._apply_hybrid_batch(batch, now)
+                self.session_log.event(
+                    "batch_created",
+                    batch_id=self.hybrid.batch_id if self.hybrid else "",
+                    status=self.hybrid.status if self.hybrid else "",
+                )
+            except Exception as exc:
+                self._fail_hybrid_batch(exc, now, "batch_create")
+
+        if self._hybrid_poll_future and self._hybrid_poll_future.done():
+            future = self._hybrid_poll_future
+            self._hybrid_poll_future = None
+            try:
+                self._apply_hybrid_batch(future.result(), now)
+            except Exception as exc:
+                self.offline_mode = True
+                self.session_log.event("api_error", severity="warning", source="batch_poll", batch_id=self.hybrid.batch_id if self.hybrid else "", error=str(exc))
 
     def _poll_hybrid_batch(self, now: float) -> None:
         if not self.hybrid or not self.hybrid.batch_id or not self.api:
@@ -340,36 +473,10 @@ class SmartMirrorAppV2(SmartMirrorApp):
             return
         if now - self.hybrid.last_poll_at < self._cfg_float("poll_interval_seconds", 2.5):
             return
+        if self._hybrid_poll_future is not None:
+            return
         self.hybrid.last_poll_at = now
-        try:
-            batch = self.api.try_on_batch(self.hybrid.batch_id)
-            old_status = self.hybrid.status
-            self.hybrid.status = str(batch.get("status") or self.hybrid.status)
-            self.hybrid.jobs = list(batch.get("jobs") or [])
-            ready = self.hybrid.ready_jobs
-            self.hybrid.message = f"AI READY {len(ready)}/{max(1, len(self.hybrid.jobs))}" if ready else "AI PROCESSING"
-            if ready:
-                if self.hybrid.mode != "gallery":
-                    self.hybrid.gallery_started_at = now
-                self.hybrid.mode = "gallery"
-                self._preload_hybrid_preview()
-            if self.hybrid.status == "failed" and not ready:
-                self.hybrid.mode = "idle_attractor"
-                self.hybrid.message = "READY"
-                self.hybrid.last_capture_ended_at = now
-                self.hybrid.presence_started_at = now
-                self.snapshot_message = "AI SNAPSHOT FAILED - LIVE MODE READY"
-                self.snapshot_message_until = now + 3.0
-            if self.hybrid.status != old_status:
-                self.session_log.event(
-                    "batch_completed" if self.hybrid.status == "completed" else ("batch_failed" if self.hybrid.status == "failed" else "batch_status"),
-                    batch_id=self.hybrid.batch_id,
-                    status=self.hybrid.status,
-                    ready=len(ready),
-                )
-        except Exception as exc:
-            self.offline_mode = True
-            self.session_log.event("api_error", severity="warning", source="batch_poll", batch_id=self.hybrid.batch_id, error=str(exc))
+        self._hybrid_poll_future = self._network_executor.submit(self.api.try_on_batch, self.hybrid.batch_id)
 
     def _preload_hybrid_preview(self) -> None:
         if not self.hybrid or not self.api:
@@ -559,6 +666,8 @@ class SmartMirrorAppV2(SmartMirrorApp):
                 self._refresh_kiosk_config(now)
                 self._configure_gesture_engine(gesture_engine)
                 timestamp_ms = int(now * 1000)
+                self._collect_ai_network(now)
+                self._collect_hybrid_network(now)
                 self._poll_ai_tryon(now)
                 self._poll_hybrid_batch(now)
                 self._collect_preview_futures()
@@ -614,15 +723,18 @@ class SmartMirrorAppV2(SmartMirrorApp):
                     self._handle_hybrid_action(self.gesture_status.event.action, pose, now)
 
                 if self.hybrid:
-                    if pose and self.hybrid.mode in {"idle_attractor", "align_user"}:
+                    capture_ready = person_ready_for_capture(pose, raw_frame.shape)
+                    if capture_ready and self.hybrid.mode in {"idle_attractor", "align_user"}:
                         if self.hybrid.presence_started_at <= 0:
                             self.hybrid.presence_started_at = now
-                        elif bool(getattr(self.args, "hybrid_auto_start", True)) and now - self.hybrid.presence_started_at >= self._cfg_float("auto_start_delay_seconds", 1.5):
+                        elif bool(getattr(self.args, "hybrid_auto_start", True)) and now - self.hybrid.presence_started_at >= self._cfg_float("auto_start_delay_seconds", 1.0):
                             self._begin_hybrid_countdown(pose, now, "auto")
-                    elif not pose and self.hybrid.mode in {"idle_attractor", "align_user"}:
+                    elif not capture_ready and self.hybrid.mode in {"idle_attractor", "align_user"}:
                         self.hybrid.presence_started_at = 0.0
+                        self.hybrid.mode = "align_user" if pose else "idle_attractor"
+                        self.hybrid.message = "STEP INTO THE FRAME" if pose else "READY"
 
-                    if self.hybrid.mode == "countdown" and now - self.hybrid.countdown_started_at >= 1.2:
+                    if self.hybrid.mode == "countdown" and now - self.hybrid.countdown_started_at >= self._cfg_float("countdown_seconds", 0.9):
                         self._start_hybrid_capture(pose, now)
                     if (
                         self.hybrid.mode == "gallery"
@@ -661,7 +773,7 @@ class SmartMirrorAppV2(SmartMirrorApp):
 
                 if self._pending_ai_tryon:
                     self._pending_ai_tryon = False
-                    self._start_ai_tryon(frame.copy(), selected_size, garment_rendered, now)
+                    self._start_ai_tryon(raw_frame.copy(), selected_size, garment_rendered, now)
 
                 if hand_tracker and self.args.gesture_debug:
                     hand_tracker.draw(frame)
@@ -722,6 +834,12 @@ class SmartMirrorAppV2(SmartMirrorApp):
                     )
                     if bool(getattr(self.args, "kiosk_health_hud", True)):
                         draw_kiosk_health(frame, self.args.camera, camera_backend, self._current_fps, pose is not None, bool(hands))
+                draw_privacy_notice(
+                    frame,
+                    str(self.kiosk_config.get("privacy_notice_mode", "off")),
+                    str(self.kiosk_config.get("privacy_notice_ar", "")),
+                    str(self.kiosk_config.get("privacy_notice_en", "")),
+                )
                 if self.calibration_screen_visible:
                     draw_calibration_screen(
                         frame,
@@ -769,7 +887,7 @@ class SmartMirrorAppV2(SmartMirrorApp):
                     if self.hybrid:
                         self._begin_hybrid_countdown(pose, now, "keyboard")
                     else:
-                        self._start_ai_tryon(frame.copy(), selected_size, garment_rendered, now)
+                        self._start_ai_tryon(raw_frame.copy(), selected_size, garment_rendered, now)
 
                 if self.api and now - last_heartbeat > 30:
                     try:
@@ -785,5 +903,8 @@ class SmartMirrorAppV2(SmartMirrorApp):
             if hand_tracker:
                 hand_tracker.close()
             camera.release()
+            delete_local_capture(self._ai_snapshot_path)
+            delete_local_capture(self._hybrid_snapshot_path)
+            self._network_executor.shutdown(wait=False, cancel_futures=True)
             self._preview_executor.shutdown(wait=False, cancel_futures=True)
             cv2.destroyAllWindows()

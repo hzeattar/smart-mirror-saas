@@ -12,25 +12,27 @@ class NvidiaTryOnProvider implements AiTryOnProvider
     public function generate(TryOnJob $job, Product $product, string $personImage, ?string $garmentImage): TryOnResult
     {
         $apiKey = (string) config('ai_tryon.nvidia.api_key');
+        $endpoint = (string) config('ai_tryon.nvidia.endpoint');
         $model = (string) config('ai_tryon.nvidia.model');
-        $baseUrl = rtrim((string) config('ai_tryon.nvidia.base_url'), '/');
 
-        if ($apiKey === '' || $model === '') {
+        if ($apiKey === '' || $endpoint === '' || $model === '') {
             throw new RuntimeException('NVIDIA try-on provider is not configured.');
         }
 
+        $images = [$this->dataUri($personImage)];
+        if ($garmentImage !== null && $garmentImage !== '') {
+            $images[] = $this->dataUri($garmentImage);
+        }
+
         $response = Http::withToken($apiKey)
-            ->timeout((int) config('ai_tryon.timeout_seconds', 120))
+            ->timeout(min(90, max(10, (int) config('ai_tryon.timeout_seconds', 90))))
             ->acceptJson()
-            ->post($baseUrl.'/images/generations', [
+            ->asJson()
+            ->post($endpoint, [
                 'model' => $model,
-                'person_image' => base64_encode($personImage),
-                'garment_image' => $garmentImage ? base64_encode($garmentImage) : null,
-                'metadata' => [
-                    'job_id' => $job->public_id,
-                    'product_name' => $product->name,
-                    'garment_type' => $product->garment_type,
-                ],
+                'prompt' => $this->prompt($product, $garmentImage !== null && $garmentImage !== ''),
+                'response_format' => 'b64_json',
+                'image' => $images,
             ]);
 
         if (! $response->successful()) {
@@ -55,5 +57,37 @@ class NvidiaTryOnProvider implements AiTryOnProvider
         }
 
         throw new RuntimeException('NVIDIA try-on response did not include an image.');
+    }
+
+    private function dataUri(string $bytes): string
+    {
+        $mime = (new \finfo(FILEINFO_MIME_TYPE))->buffer($bytes);
+        if (! in_array($mime, ['image/jpeg', 'image/png'], true)) {
+            $mime = 'image/jpeg';
+        }
+
+        return 'data:'.$mime.';base64,'.base64_encode($bytes);
+    }
+
+    private function prompt(Product $product, bool $hasGarmentImage): string
+    {
+        $configured = trim((string) config('ai_tryon.nvidia.prompt'));
+        if ($configured !== '') {
+            return $configured;
+        }
+
+        $garmentReference = $hasGarmentImage
+            ? 'The first image is the customer and the second image is the exact garment reference.'
+            : 'Use the product description as the garment reference.';
+
+        return implode(' ', [
+            'Create a photorealistic retail virtual try-on image.',
+            $garmentReference,
+            'Dress the customer in the referenced garment while preserving their identity, face, hair, body shape, pose, hands, background, and lighting.',
+            'Preserve the garment color, material, texture, logos, cut, and proportions accurately.',
+            'Do not add text, watermarks, extra people, or unrelated objects.',
+            'Product: '.$product->name.'.',
+            $product->garment_type ? 'Garment type: '.$product->garment_type.'.' : '',
+        ]);
     }
 }

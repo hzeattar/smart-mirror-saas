@@ -64,7 +64,9 @@ Every gesture has a hold threshold, movement threshold and cooldown to reduce ac
 - Hold thumbs-up: show the QR code for the current result.
 - Hold a fist: close the gallery and return to the attractor.
 
-Hybrid mode can also auto-start after a centred person is visible for 1.5 seconds. Use `--no-hybrid-auto-start` to require manual open-palm start.
+Hybrid mode auto-starts after a centred person is visible for 1.0 second, followed by a 0.9-second countdown. This keeps controlled-QA capture below 2.5 seconds without a touch or gesture. The server can disable AI immediately with `ai_tryon_enabled=false`; the live overlay and catalogue continue working and the client reports that AI is temporarily unavailable.
+
+There is no blocking consent screen in the controlled QA profile. `privacy_notice_mode=off` hides notices during those tests. For public launch, set `privacy_notice_mode=passive` to render the centrally managed Arabic/English camera and retention notice at the bottom of the live view without delaying capture. Complete the site's privacy/signage review before public use.
 
 Snapshots are saved by default under:
 

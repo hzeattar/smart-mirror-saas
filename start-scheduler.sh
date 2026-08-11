@@ -29,13 +29,8 @@ PHP
 php -S "0.0.0.0:${PORT:-8080}" /tmp/scheduler-health.php >/tmp/scheduler-health.log 2>&1 &
 health_pid=$!
 
-(
-  log "Starting try-on retention scheduler: interval=${PURGE_INTERVAL_SECONDS:-3600}s"
-  while true; do
-    php artisan tryon:purge-expired || true
-    sleep "${PURGE_INTERVAL_SECONDS:-3600}"
-  done
-) &
+log "Starting Laravel scheduler for retention, AI readiness, and RunPod reconciliation"
+php artisan schedule:work &
 scheduler_pid=$!
 
 trap 'kill "$health_pid" "$scheduler_pid" 2>/dev/null || true' EXIT

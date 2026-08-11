@@ -12,11 +12,14 @@ use App\Models\Order;
 use App\Models\Product;
 use App\Models\TryOnBatch;
 use App\Models\TryOnJob;
+use App\Services\AiTryOn\AiProviderHealth;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class DashboardController extends Controller
 {
+    public function __construct(private readonly AiProviderHealth $aiHealth) {}
+
     public function __invoke(Request $request): JsonResponse
     {
         $tenantId = $request->user()->tenant_id;
@@ -31,6 +34,10 @@ class DashboardController extends Controller
             'ai_batches_today' => TryOnBatch::query()->forTenant($tenantId)->whereDate('created_at', today())->count(),
             'ai_completion_rate' => $this->completionRate($tenantId),
             'ai_average_processing_seconds' => $this->averageProcessingSeconds($tenantId),
+            'ai_p95_processing_seconds' => $this->p95ProcessingSeconds($tenantId),
+            'ai_queue_backlog' => TryOnJob::query()->forTenant($tenantId)->whereIn('status', ['queued', 'processing'])->count(),
+            'ai_failure_rate_today' => $this->failureRateToday($tenantId),
+            'ai_provider_health' => $this->aiHealth->snapshot(),
             'ai_failed_jobs' => TryOnJob::query()->forTenant($tenantId)->where('status', 'failed')->count(),
             'average_fps_today' => (float) round((float) MirrorSessionEvent::query()
                 ->forTenant($tenantId)
@@ -64,19 +71,12 @@ class DashboardController extends Controller
 
     private function averageProcessingSeconds(int $tenantId): float
     {
-        $jobs = TryOnJob::query()
-            ->forTenant($tenantId)
-            ->whereNotNull('started_at')
-            ->whereNotNull('completed_at')
-            ->latest()
-            ->limit(200)
-            ->get(['started_at', 'completed_at']);
-
-        if ($jobs->isEmpty()) {
+        $durations = $this->completedDurations($tenantId);
+        if ($durations->isEmpty()) {
             return 0.0;
         }
 
-        return round($jobs->avg(fn (TryOnJob $job) => $job->started_at->diffInSeconds($job->completed_at)), 1);
+        return round((float) $durations->avg(), 1);
     }
 
     private function captureCompletionRate(int $tenantId): float
@@ -98,5 +98,40 @@ class DashboardController extends Controller
             ->count();
 
         return round(($submitted / $started) * 100, 1);
+    }
+
+    private function p95ProcessingSeconds(int $tenantId): float
+    {
+        $durations = $this->completedDurations($tenantId);
+        if ($durations->isEmpty()) {
+            return 0.0;
+        }
+
+        return round((float) $durations[(int) max(0, ceil($durations->count() * 0.95) - 1)], 1);
+    }
+
+    private function failureRateToday(int $tenantId): float
+    {
+        $query = TryOnJob::query()->forTenant($tenantId)->whereDate('created_at', today());
+        $terminal = (clone $query)->whereIn('status', ['completed', 'failed'])->count();
+        if ($terminal === 0) {
+            return 0.0;
+        }
+
+        return round(((clone $query)->where('status', 'failed')->count() / $terminal) * 100, 1);
+    }
+
+    private function completedDurations(int $tenantId)
+    {
+        return TryOnJob::query()
+            ->forTenant($tenantId)
+            ->whereNotNull('queued_at')
+            ->whereNotNull('completed_at')
+            ->latest()
+            ->limit(200)
+            ->get(['queued_at', 'completed_at'])
+            ->map(fn (TryOnJob $job) => $job->queued_at->diffInMilliseconds($job->completed_at) / 1000)
+            ->sort()
+            ->values();
     }
 }
