@@ -51,9 +51,20 @@ Implemented on `codex/pilot-release`:
 - A small authenticated HTTPS gateway implementation that limits body size, concurrency and request duration while keeping the NIM port private.
 - CI coverage for Laravel, Python, Vite/Pint, NVIDIA contract behaviour, Go gateway checks and gateway image build.
 
+Release evidence recorded on 2026-08-11:
+
+- Local Laravel suite: 33 tests and 372 assertions passed.
+- Local Python compile and suite: 46 tests passed.
+- Vite production build, Pint and diff checks passed.
+- Railway `staging` was created with an isolated MySQL volume and dedicated S3 bucket.
+- Web, worker and scheduler successfully deployed the release branch; `/up` returned HTTP 200.
+- In-container S3 write/read/delete verification passed.
+- Worker uses the database queue; the scheduler was observed running retention, provider-health and RunPod reconciliation tasks.
+- GitHub Actions jobs did not start because the repository owner's GitHub account is locked by a billing issue. This is an external release blocker and is not treated as a passing CI run.
+
 External validation still required before production activation:
 
-1. Create the isolated Railway `staging` environment and its dedicated MySQL/object storage.
+1. Resolve GitHub billing and rerun every CI job on the final release commit.
 2. Configure RunPod Secure Cloud credentials and NGC entitlement outside the repository.
 3. Deploy a pinned FLUX.2 Klein Visual NIM on an encrypted-volume L40S 48 GB pod with driver 570 or newer.
 4. Connect only the worker and scheduler to the gateway endpoint/token.
