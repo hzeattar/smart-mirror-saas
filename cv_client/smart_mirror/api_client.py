@@ -10,7 +10,7 @@ import cv2
 import numpy as np
 import requests
 
-from .garment_assets import normalize_canvas, remove_background
+from .garment_assets import border_background_alpha, normalize_canvas
 
 
 @dataclass
@@ -224,7 +224,10 @@ class SmartMirrorApi:
         if image.ndim == 3 and image.shape[2] == 4 and np.any(image[:, :, 3] < 250):
             transparent = image
         else:
-            transparent, _method = remove_background(image)
+            # Catalog assets should already be processed by the private garment
+            # processor. This deterministic fallback avoids loading a large
+            # rembg model before the kiosk camera can open.
+            transparent = border_background_alpha(image)
         normalized, _bbox = normalize_canvas(transparent, canvas_size=(1024, 1024), margin_ratio=0.06)
         return normalized
 

@@ -63,8 +63,8 @@ class MirrorController extends Controller
                 'sizes' => $product->sizingCharts->map(fn ($size) => [
                     'id' => $size->id,
                     'label' => $size->size_label,
-                    'shoulder_width_cm' => (float) $size->shoulder_width_cm,
-                    'chest_width_cm' => (float) $size->chest_width_cm,
+                    'shoulder_width_cm' => $size->shoulder_width_cm !== null ? (float) $size->shoulder_width_cm : null,
+                    'chest_width_cm' => $size->chest_width_cm !== null ? (float) $size->chest_width_cm : null,
                     'waist_width_cm' => $size->waist_width_cm !== null ? (float) $size->waist_width_cm : null,
                     'hip_width_cm' => $size->hip_width_cm !== null ? (float) $size->hip_width_cm : null,
                     'sleeve_length_cm' => $size->sleeve_length_cm !== null ? (float) $size->sleeve_length_cm : null,

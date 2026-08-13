@@ -190,10 +190,10 @@ class PhotographicGarmentCatalogSeeder extends Seeder
     {
         if ($garmentType === 'trousers') {
             return [
-                ['size_label' => 'S', 'shoulder_width_cm' => 38, 'chest_width_cm' => 48, 'waist_width_cm' => 38, 'hip_width_cm' => 48, 'height_cm' => 100, 'fit_ease_cm' => 2, 'sort_order' => 0],
-                ['size_label' => 'M', 'shoulder_width_cm' => 41, 'chest_width_cm' => 51, 'waist_width_cm' => 41, 'hip_width_cm' => 51, 'height_cm' => 102, 'fit_ease_cm' => 2, 'sort_order' => 1],
-                ['size_label' => 'L', 'shoulder_width_cm' => 44, 'chest_width_cm' => 54, 'waist_width_cm' => 44, 'hip_width_cm' => 54, 'height_cm' => 104, 'fit_ease_cm' => 3, 'sort_order' => 2],
-                ['size_label' => 'XL', 'shoulder_width_cm' => 47, 'chest_width_cm' => 57, 'waist_width_cm' => 47, 'hip_width_cm' => 57, 'height_cm' => 106, 'fit_ease_cm' => 3, 'sort_order' => 3],
+                ['size_label' => 'S', 'shoulder_width_cm' => null, 'chest_width_cm' => null, 'waist_width_cm' => 38, 'hip_width_cm' => 48, 'height_cm' => 100, 'inseam_length_cm' => 75, 'fit_ease_cm' => 2, 'sort_order' => 0],
+                ['size_label' => 'M', 'shoulder_width_cm' => null, 'chest_width_cm' => null, 'waist_width_cm' => 41, 'hip_width_cm' => 51, 'height_cm' => 102, 'inseam_length_cm' => 77, 'fit_ease_cm' => 2, 'sort_order' => 1],
+                ['size_label' => 'L', 'shoulder_width_cm' => null, 'chest_width_cm' => null, 'waist_width_cm' => 44, 'hip_width_cm' => 54, 'height_cm' => 104, 'inseam_length_cm' => 79, 'fit_ease_cm' => 3, 'sort_order' => 2],
+                ['size_label' => 'XL', 'shoulder_width_cm' => null, 'chest_width_cm' => null, 'waist_width_cm' => 47, 'hip_width_cm' => 57, 'height_cm' => 106, 'inseam_length_cm' => 81, 'fit_ease_cm' => 3, 'sort_order' => 3],
             ];
         }
 

@@ -39,7 +39,7 @@ def _ensure_bgra(image: np.ndarray) -> np.ndarray:
     return np.dstack([image, alpha])
 
 
-def _border_background_alpha(image: np.ndarray) -> np.ndarray:
+def border_background_alpha(image: np.ndarray) -> np.ndarray:
     """Fallback background removal for clean product photography.
 
     It estimates the background colour from border pixels and converts pixels
@@ -87,7 +87,7 @@ def remove_background(image: np.ndarray) -> tuple[np.ndarray, str]:
     except Exception:
         pass
 
-    return _border_background_alpha(bgra), "border-colour-fallback"
+    return border_background_alpha(bgra), "border-colour-fallback"
 
 
 def alpha_bbox(image: np.ndarray, threshold: int = 8) -> tuple[int, int, int, int]:

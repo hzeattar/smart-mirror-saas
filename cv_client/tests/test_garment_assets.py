@@ -7,10 +7,21 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from smart_mirror.api_client import SmartMirrorApi
 from smart_mirror.garment_assets import alpha_bbox, normalize_canvas, prepare_garment_asset
 
 
 class GarmentAssetTests(unittest.TestCase):
+    def test_kiosk_photo_fallback_is_transparent_without_loading_rembg(self):
+        image = np.full((320, 240, 3), 230, dtype=np.uint8)
+        image[40:290, 75:165] = (30, 60, 120)
+
+        prepared = SmartMirrorApi._prepare_photo(image)
+
+        self.assertEqual((1024, 1024, 4), prepared.shape)
+        self.assertTrue(np.any(prepared[:, :, 3] < 250))
+        self.assertTrue(np.any(prepared[:, :, 3] > 8))
+
     def test_normalize_canvas_centres_transparent_garment(self):
         image = np.zeros((400, 300, 4), dtype=np.uint8)
         image[60:360, 80:220, :3] = (40, 80, 180)

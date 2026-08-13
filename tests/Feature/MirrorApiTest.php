@@ -79,6 +79,27 @@ class MirrorApiTest extends TestCase
         );
     }
 
+    public function test_trouser_catalog_keeps_non_applicable_upper_body_measurements_null(): void
+    {
+        $this->seed();
+
+        $pair = $this->postJson('/api/mirrors/pair', [
+            'pairing_code' => 'DEMO2026',
+            'device_name' => 'Contract Mirror',
+        ])->assertOk();
+
+        $catalog = $this->withToken($pair->json('token'))
+            ->getJson('/api/mirror/catalog')
+            ->assertOk();
+        $trousers = collect($catalog->json('products'))
+            ->firstWhere('garment_type', 'trousers');
+
+        $this->assertNotNull($trousers);
+        $this->assertNull($trousers['sizes'][0]['shoulder_width_cm']);
+        $this->assertNull($trousers['sizes'][0]['chest_width_cm']);
+        $this->assertGreaterThan(0, $trousers['sizes'][0]['inseam_length_cm']);
+    }
+
     public function test_admin_updates_mirror_kiosk_profile_for_same_tenant(): void
     {
         $tenant = Tenant::query()->create(['name' => 'Store', 'domain' => 'profile.test', 'status' => TenantStatus::Active]);

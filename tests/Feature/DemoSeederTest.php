@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Product;
+use App\Services\ProductMeasurementService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -32,10 +33,19 @@ class DemoSeederTest extends TestCase
             $this->assertTrue($product->is_demo_asset);
             $this->assertNotNull($product->asset_source);
             $this->assertSame('demo', $product->image_qa['base']['status'] ?? null);
+            $this->assertTrue(app(ProductMeasurementService::class)->ready($product));
 
             foreach ($product->sizingCharts as $size) {
-                $this->assertNotNull($size->shoulder_width_cm);
-                $this->assertNotNull($size->chest_width_cm);
+                if ($product->garment_type === 'trousers') {
+                    $this->assertNull($size->shoulder_width_cm);
+                    $this->assertNull($size->chest_width_cm);
+                    $this->assertNotNull($size->waist_width_cm);
+                    $this->assertNotNull($size->hip_width_cm);
+                    $this->assertNotNull($size->inseam_length_cm);
+                } else {
+                    $this->assertNotNull($size->shoulder_width_cm);
+                    $this->assertNotNull($size->chest_width_cm);
+                }
                 $this->assertNotNull($size->height_cm);
             }
         }
