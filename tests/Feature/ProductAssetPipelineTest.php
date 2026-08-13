@@ -56,6 +56,7 @@ class ProductAssetPipelineTest extends TestCase
                 'size_label' => $label,
                 'shoulder_width_cm' => 44,
                 'chest_width_cm' => 52,
+                'sleeve_length_cm' => 62,
                 'height_cm' => 72,
             ])->all(),
         ];
@@ -93,6 +94,7 @@ class ProductAssetPipelineTest extends TestCase
             'asset_source' => 'Store shoot',
             'asset_license' => 'Owned',
             'image_qa' => ['base' => ['status' => 'ok'], 'texture' => ['status' => 'ok']],
+            'asset_review_status' => 'approved',
         ]);
         foreach (['S', 'M', 'L', 'XL'] as $label) {
             $ready->sizingCharts()->create(['size_label' => $label, 'shoulder_width_cm' => 44, 'chest_width_cm' => 52, 'height_cm' => 70]);

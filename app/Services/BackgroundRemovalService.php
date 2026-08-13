@@ -9,7 +9,7 @@ use RuntimeException;
 
 class BackgroundRemovalService
 {
-    public function remove(string $inputPath, string $outputPath): void
+    public function remove(string $inputPath, string $outputPath): array
     {
         $disk = Storage::disk(config('filesystems.default'));
         $inputBytes = $disk->get($inputPath);
@@ -25,7 +25,7 @@ class BackgroundRemovalService
             }
             $disk->put($outputPath, $response->body());
 
-            return;
+            return ['model' => $response->header('X-Garment-Model', 'remote')];
         }
 
         $tempInput = tempnam(sys_get_temp_dir(), 'garment-in-');
@@ -47,5 +47,7 @@ class BackgroundRemovalService
         $disk->put($outputPath, file_get_contents($tempOutput));
         @unlink($tempInput);
         @unlink($tempOutput);
+
+        return ['model' => 'local-rembg'];
     }
 }

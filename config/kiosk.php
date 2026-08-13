@@ -18,6 +18,10 @@ return [
     'hand_every_n' => (int) env('KIOSK_HAND_EVERY_N', 3),
     'kiosk_health_hud' => (bool) env('KIOSK_HEALTH_HUD', true),
     'live_restyle_enabled' => (bool) env('KIOSK_LIVE_RESTYLE_ENABLED', false),
+    'sizing_mode' => env('KIOSK_SIZING_MODE', 'depth'),
+    'fit_confidence_threshold' => (int) env('KIOSK_FIT_CONFIDENCE_THRESHOLD', 75),
+    'max_live_yaw_deg' => (float) env('KIOSK_MAX_LIVE_YAW_DEG', 25),
+    'depth_required' => (bool) env('KIOSK_DEPTH_REQUIRED', true),
     'gestures' => [
         'cooldown_seconds' => (float) env('KIOSK_GESTURE_COOLDOWN_SECONDS', 1.1),
         'hold_seconds' => (float) env('KIOSK_GESTURE_HOLD_SECONDS', 0.75),

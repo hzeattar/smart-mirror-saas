@@ -6,7 +6,7 @@ A multi-tenant B2B platform for AR virtual fitting rooms used by clothing retail
 
 - **Laravel 13 API/CMS** — tenant isolation, admin authentication, product catalog, sizing charts, device pairing, QR checkout, orders, queues and broadcasting.
 - **Vue 3 admin dashboard** — product and sizing management, device pairing and real-time order operations.
-- **Python computer vision client** — OpenCV webcam capture, MediaPipe Pose landmarks 11/12, two-metre calibration and dynamic transparent garment overlay.
+- **Python computer vision client** — RealSense D455 aligned RGB-D sizing with an OpenCV live-only fallback, MediaPipe pose and a depth-aware 2.5D garment mesh.
 - **Railway deployment** — Docker-based web deployment with migrations, queue worker and health checks.
 
 ## Local web setup

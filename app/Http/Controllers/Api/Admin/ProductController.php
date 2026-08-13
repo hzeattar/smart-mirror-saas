@@ -9,6 +9,7 @@ use App\Jobs\ProcessGarmentImage;
 use App\Models\Category;
 use App\Models\Product;
 use App\Services\ImageQaService;
+use App\Services\ProductMeasurementService;
 use App\Services\ProductReadinessService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -16,12 +17,14 @@ use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class ProductController extends Controller
 {
     public function __construct(
         private readonly ProductReadinessService $readiness,
         private readonly ImageQaService $imageQa,
+        private readonly ProductMeasurementService $measurements,
     ) {}
 
     public function index(Request $request): JsonResponse
@@ -79,6 +82,8 @@ class ProductController extends Controller
                 'name' => $data['name'],
                 'description' => $data['description'] ?? null,
                 'garment_type' => $data['garment_type'] ?? 'top',
+                'measurement_schema_version' => ProductMeasurementService::SCHEMA_VERSION,
+                'measurement_basis' => ProductMeasurementService::BASIS,
                 'fit_profile' => $data['fit_profile'] ?? $this->defaultFitProfile(),
                 'texture_anchor' => $data['texture_anchor'] ?? $this->defaultTextureAnchor(),
                 'is_demo_asset' => $request->boolean('is_demo_asset'),
@@ -95,6 +100,7 @@ class ProductController extends Controller
                 'background_removal_status' => $texturePath
                     ? BackgroundRemovalStatus::Completed
                     : ($basePath ? BackgroundRemovalStatus::Pending : BackgroundRemovalStatus::NotRequested),
+                'asset_review_status' => 'pending',
             ]);
             $this->syncSizes($product, $data['sizes']);
 
@@ -140,6 +146,8 @@ class ProductController extends Controller
                 $values['base_image_path'] = $request->file('base_image')->store('garments/originals', config('filesystems.default'));
                 $values['base_image_url'] = $disk->url($values['base_image_path']);
                 $values['background_removal_status'] = BackgroundRemovalStatus::Pending;
+                $values['asset_review_status'] = 'pending';
+                $values['asset_reviewed_at'] = null;
                 $values['image_qa'] = [
                     ...($product->image_qa ?? []),
                     'base' => $this->imageQa->fromUpload($request->file('base_image'), 'base'),
@@ -151,6 +159,8 @@ class ProductController extends Controller
                 $values['texture_image_url'] = $disk->url($values['texture_image_path']);
                 $values['background_removal_status'] = BackgroundRemovalStatus::Completed;
                 $values['processed_at'] = now();
+                $values['asset_review_status'] = 'pending';
+                $values['asset_reviewed_at'] = null;
                 $values['image_qa'] = [
                     ...($values['image_qa'] ?? ($product->image_qa ?? [])),
                     'texture' => $this->imageQa->fromUpload($request->file('texture_image'), 'texture'),
@@ -190,17 +200,38 @@ class ProductController extends Controller
         $product->update([
             'background_removal_status' => BackgroundRemovalStatus::Pending,
             'background_removal_error' => null,
+            'asset_review_status' => 'pending',
+            'asset_reviewed_at' => null,
         ]);
         ProcessGarmentImage::dispatch($product->id);
 
         return response()->json(['message' => 'Image processing queued.']);
     }
 
+    public function review(Request $request, Product $product): JsonResponse
+    {
+        $this->authorizeTenant($request, $product);
+        $data = $request->validate([
+            'status' => ['required', Rule::in(['approved', 'rejected'])],
+            'notes' => ['nullable', 'string', 'max:2000'],
+        ]);
+        abort_if($data['status'] === 'approved' && ! filled($product->texture_image_path) && ! filled($product->texture_image_url), 422, 'A processed texture is required before approval.');
+
+        $product->update([
+            'asset_review_status' => $data['status'],
+            'asset_review_notes' => $data['notes'] ?? null,
+            'asset_reviewed_at' => now(),
+        ]);
+        $fresh = $product->fresh()->load(['category', 'sizingCharts']);
+
+        return response()->json(['product' => $fresh, 'readiness' => $this->readiness->readiness($fresh)]);
+    }
+
     private function validateProduct(Request $request, bool $partial = false): array
     {
         $prefix = $partial ? 'sometimes' : 'required';
 
-        return $request->validate([
+        $data = $request->validate([
             'name' => [$prefix, 'string', 'max:180'],
             'sku' => ['nullable', 'string', 'max:100'],
             'category_id' => ['nullable', 'integer'],
@@ -229,14 +260,38 @@ class ProductController extends Controller
 
             'sizes' => [$partial ? 'sometimes' : 'required', 'array', 'min:1', 'max:30'],
             'sizes.*.size_label' => ['required', 'string', 'max:32'],
-            'sizes.*.shoulder_width_cm' => ['required', 'numeric', 'min:1', 'max:300'],
-            'sizes.*.chest_width_cm' => ['required', 'numeric', 'min:1', 'max:300'],
+            'sizes.*.shoulder_width_cm' => ['nullable', 'numeric', 'min:1', 'max:300'],
+            'sizes.*.chest_width_cm' => ['nullable', 'numeric', 'min:1', 'max:300'],
             'sizes.*.waist_width_cm' => ['nullable', 'numeric', 'min:1', 'max:300'],
             'sizes.*.hip_width_cm' => ['nullable', 'numeric', 'min:1', 'max:300'],
             'sizes.*.sleeve_length_cm' => ['nullable', 'numeric', 'min:0', 'max:300'],
+            'sizes.*.inseam_length_cm' => ['nullable', 'numeric', 'min:1', 'max:300'],
             'sizes.*.fit_ease_cm' => ['nullable', 'numeric', 'min:0', 'max:50'],
             'sizes.*.height_cm' => ['required', 'numeric', 'min:1', 'max:300'],
         ]);
+
+        $garmentType = (string) ($data['garment_type'] ?? ($partial ? $request->route('product')?->garment_type : 'top'));
+        $sizes = $data['sizes'] ?? [];
+        $product = $partial ? $request->route('product') : null;
+        $mustRevalidateExisting = $product instanceof Product
+            && (array_key_exists('garment_type', $data)
+                || (($data['status'] ?? null) === ProductStatus::Active->value)
+                || ($product->status === ProductStatus::Active));
+        if ($sizes === [] && $mustRevalidateExisting) {
+            $sizes = $product->sizingCharts()->get()->map->toArray()->all();
+        }
+        foreach ($sizes as $index => $size) {
+            foreach ($this->measurements->requiredFields($garmentType) as $field) {
+                if (! isset($size[$field]) || ! is_numeric($size[$field]) || (float) $size[$field] <= 0) {
+                    throw ValidationException::withMessages(["sizes.$index.$field" => "This flat-garment measurement is required for $garmentType."]);
+                }
+            }
+        }
+        if ($mustRevalidateExisting && $sizes === []) {
+            throw ValidationException::withMessages(['sizes' => 'Fit-ready measurements are required before activating this product.']);
+        }
+
+        return $data;
     }
 
     private function syncSizes(Product $product, array $sizes): void

@@ -34,6 +34,8 @@ class SmartUiModel:
     ai_status: str = ""
     ai_result_url: str = ""
     ai_qr_image: np.ndarray | None = None
+    sizing_status: str = "unavailable"
+    alternate_size: str = ""
 
 
 def clicked_action(hitboxes: dict[str, Rect], x: int, y: int) -> str | None:
@@ -113,7 +115,13 @@ def draw_smart_ui(frame: np.ndarray, model: SmartUiModel) -> dict[str, Rect]:
     cv2.putText(frame, model.product_name[:36], (left + 18, top + 31), cv2.FONT_HERSHEY_SIMPLEX, 0.66, (239, 244, 250), 2, cv2.LINE_AA)
     cv2.putText(frame, model.price, (left + 18, top + 65), cv2.FONT_HERSHEY_SIMPLEX, 0.72, (88, 224, 181), 2, cv2.LINE_AA)
     cv2.putText(frame, f"{model.product_index + 1}/{max(1, model.product_count)}", (left + 18, bottom - 14), cv2.FONT_HERSHEY_SIMPLEX, 0.36, (151, 173, 195), 1, cv2.LINE_AA)
-    cv2.putText(frame, f"SIZE {model.size_label or '--'}", (right - 232, bottom - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.56, (237, 243, 249), 2, cv2.LINE_AA)
+    if model.sizing_status == "recommended":
+        size_text = f"SIZE {model.size_label or '--'}  ALT {model.alternate_size or '--'}"
+    elif model.sizing_status == "low_confidence":
+        size_text = "SIZING LOW CONFIDENCE"
+    else:
+        size_text = "SIZING UNAVAILABLE"
+    cv2.putText(frame, size_text, (right - 300, bottom - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (237, 243, 249), 1, cv2.LINE_AA)
 
     if model.controls_visible:
         hitboxes["size_down"] = (right - 174, top + 62, right - 124, bottom - 12)

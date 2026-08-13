@@ -55,6 +55,7 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function (): void {
         Route::get('/dashboard', DashboardController::class);
         Route::apiResource('products', ProductController::class);
         Route::post('/products/{product}/reprocess', [ProductController::class, 'reprocess']);
+        Route::post('/products/{product}/review', [ProductController::class, 'review']);
         Route::get('/try-on-batches', [TryOnBatchController::class, 'index']);
         Route::get('/try-on-jobs', [TryOnJobController::class, 'index']);
         Route::get('/ai-evaluations', [AiEvaluationController::class, 'index']);

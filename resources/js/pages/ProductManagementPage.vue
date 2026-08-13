@@ -27,6 +27,7 @@ const emptySize = () => ({
   waist_width_cm: '',
   hip_width_cm: '',
   sleeve_length_cm: '',
+  inseam_length_cm: '',
   fit_ease_cm: '4',
   height_cm: '',
 })
@@ -130,6 +131,7 @@ function edit(product) {
       waist_width_cm: size.waist_width_cm || '',
       hip_width_cm: size.hip_width_cm || '',
       sleeve_length_cm: size.sleeve_length_cm || '',
+      inseam_length_cm: size.inseam_length_cm || '',
       fit_ease_cm: size.fit_ease_cm || '4',
       height_cm: size.height_cm,
     })),
@@ -199,6 +201,11 @@ async function reprocess(product) {
   await load()
 }
 
+async function review(product, status) {
+  await api.post(`/admin/products/${product.id}/review`, { status })
+  await load()
+}
+
 function readiness(product) {
   if (product.readiness?.label) return product.readiness.label
   if (product.readiness?.status) return product.readiness.status
@@ -220,6 +227,10 @@ function issueLabel(issue) {
     extreme_aspect_ratio: 'Image aspect ratio looks wrong',
     demo_asset: 'Demo asset only',
     missing_asset_metadata: 'Missing source or license',
+    needs_measurements: 'Required flat measurements are incomplete',
+    asset_review_pending: 'Cutout is waiting for visual review',
+    garment_too_small_in_frame: 'Garment is too small inside the cutout',
+    garment_touches_frame_edge: 'Garment touches the cutout edge',
   }
   return labels[issue] || issue.replaceAll('_', ' ')
 }
@@ -326,15 +337,16 @@ async function setReadinessFilter(value) {
       </div>
 
       <div class="size-table-head">
-        <span>Size</span><span>Shoulder</span><span>Chest</span><span>Waist</span><span>Hip</span><span>Sleeve</span><span>Length</span><span>Ease</span><span></span>
+        <span>Size</span><span>Shoulder</span><span>Chest</span><span>Waist</span><span>Hip</span><span>Sleeve</span><span>Inseam</span><span>Length</span><span>Ease</span><span></span>
       </div>
       <div class="size-row size-row-v2" v-for="(size, index) in form.sizes" :key="index">
         <label><span>Label</span><input v-model="size.size_label" placeholder="M" required></label>
-        <label><span>Shoulder</span><input v-model="size.shoulder_width_cm" type="number" step="0.1" required></label>
-        <label><span>Chest</span><input v-model="size.chest_width_cm" type="number" step="0.1" required></label>
+        <label><span>Shoulder</span><input v-model="size.shoulder_width_cm" type="number" step="0.1"></label>
+        <label><span>Chest</span><input v-model="size.chest_width_cm" type="number" step="0.1"></label>
         <label><span>Waist</span><input v-model="size.waist_width_cm" type="number" step="0.1"></label>
         <label><span>Hip</span><input v-model="size.hip_width_cm" type="number" step="0.1"></label>
         <label><span>Sleeve</span><input v-model="size.sleeve_length_cm" type="number" step="0.1"></label>
+        <label><span>Inseam</span><input v-model="size.inseam_length_cm" type="number" step="0.1"></label>
         <label><span>Length</span><input v-model="size.height_cm" type="number" step="0.1" required></label>
         <label><span>Fit ease</span><input v-model="size.fit_ease_cm" type="number" step="0.1"></label>
         <button type="button" class="icon-btn danger" @click="removeSize(index)">x</button>
@@ -363,14 +375,10 @@ async function setReadinessFilter(value) {
       <p>Checking catalog readiness and image QA.</p>
     </div>
     <article class="product-card" v-for="product in products" :key="product.id">
-      <div class="product-image">
-        <img
-          v-if="(product.texture_image_url || product.base_image_url) && !product._imageBroken"
-          :src="product.texture_image_url || product.base_image_url"
-          :alt="product.name"
-          @error="markImageBroken(product)"
-        >
-        <span v-else>No image</span>
+      <div class="product-image product-preview-pair">
+        <img v-if="product.base_image_url" :src="product.base_image_url" :alt="`${product.name} before`">
+        <img v-if="product.texture_image_url && !product._imageBroken" :src="product.texture_image_url" :alt="`${product.name} cutout`" @error="markImageBroken(product)">
+        <span v-if="!product.base_image_url && !product.texture_image_url">No image</span>
       </div>
       <div class="product-body">
         <div class="product-title">
@@ -382,6 +390,7 @@ async function setReadinessFilter(value) {
           <strong>{{ Number(product.unit_price).toLocaleString('ar-EG') }} {{ product.currency }}</strong>
         </div>
         <StatusPill :value="product.background_removal_status" />
+        <small class="muted">Cutout review: {{ product.asset_review_status || 'pending' }}<span v-if="product.image_qa?.texture?.model"> · {{ product.image_qa.texture.model }}</span></small>
         <div class="product-meta">
           <span>AI readiness</span>
           <StatusPill :value="readiness(product)" />
@@ -392,6 +401,8 @@ async function setReadinessFilter(value) {
         <div class="card-actions">
           <button class="text-btn" @click="edit(product)">Edit</button>
           <button v-if="product.base_image_path" class="text-btn" @click="reprocess(product)">Reprocess</button>
+          <button v-if="product.texture_image_url && product.asset_review_status !== 'approved'" class="text-btn" @click="review(product, 'approved')">Approve cutout</button>
+          <button v-if="product.texture_image_url && product.asset_review_status !== 'rejected'" class="text-btn danger-text" @click="review(product, 'rejected')">Reject cutout</button>
           <button class="text-btn danger-text" @click="remove(product)">Delete</button>
         </div>
       </div>

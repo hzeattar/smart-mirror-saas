@@ -59,3 +59,20 @@ jobs:
         run: go vet ./...
       - name: Build gateway container
         run: docker build --tag smart-mirror-nvidia-gateway:ci .
+
+  garment-processor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: tools/garment-processor
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: tools/garment-processor/requirements-test.txt
+      - run: python -m pip install -r requirements-test.txt
+      - run: pytest -q
+      - run: docker build --tag smart-mirror-garment-processor:ci .

@@ -8,8 +8,8 @@ import cv2
 
 from .app import SmartMirrorApp
 from .ai_tryon import AiTryOnState, delete_local_capture, make_qr_image, save_ai_snapshot
-from .camera import open_camera
-from .fitting import estimate_body_measurements, fit_confidence, recommend_size
+from .depth_sizing import DepthSizingBurst, FitRecommendation, mirror_rgbd, recommend_fit
+from .fitting import BodyMeasurements, SizeRecommendation
 from .gestures import GestureEngine, GestureStatus
 from .hand_tracker import HandTracker
 from .hybrid import (
@@ -27,10 +27,11 @@ from .hybrid import (
 )
 from .interaction import CursorState, HandCursor
 from .lower_overlay import lower_body_ready, overlay_trousers
-from .overlay import overlay_garment
+from .overlay import OcclusionMaskSmoother, overlay_garment
 from .pose_tracker import PoseTracker
 from .session_log import SessionLogger
 from .smart_ui import SmartUiModel, clicked_action, draw_smart_ui
+from .rgbd_camera import open_rgbd_camera
 
 
 class SmartMirrorAppV2(SmartMirrorApp):
@@ -84,7 +85,16 @@ class SmartMirrorAppV2(SmartMirrorApp):
             "pose_every_n": int(getattr(args, "pose_every_n", 3)),
             "hand_every_n": int(getattr(args, "hand_every_n", 3)),
             "kiosk_health_hud": bool(getattr(args, "kiosk_health_hud", True)),
+            "sizing_mode": "depth",
+            "fit_confidence_threshold": 75,
+            "max_live_yaw_deg": 25.0,
+            "depth_required": True,
         }
+        self.depth_burst = DepthSizingBurst()
+        self.depth_fit = FitRecommendation("unavailable", None, None, 0, ("depth_not_ready",))
+        self.occlusion_smoother = OcclusionMaskSmoother()
+        self._live_yaw_deg = 0.0
+        self._last_sizing_telemetry: tuple | None = None
 
     def _neighbour_name(self, delta: int) -> str:
         if len(self.products) < 2:
@@ -605,8 +615,30 @@ class SmartMirrorAppV2(SmartMirrorApp):
             hem_extension_ratio=hem_extension,
             preserve_forearms=preserve_forearms,
             texture_anchor=self.product.texture_anchor,
+            yaw_deg=self._live_yaw_deg,
+            max_yaw_deg=self._cfg_float("max_live_yaw_deg", 25.0),
+            occlusion_smoother=self.occlusion_smoother,
         )
         return frame, quad is not None
+
+    def _record_sizing_telemetry(self, fit: FitRecommendation) -> None:
+        confidence_bucket = (
+            "high" if fit.confidence >= 85 else
+            "medium" if fit.confidence >= self._cfg_int("fit_confidence_threshold", 75) else
+            "low"
+        )
+        state = (fit.status, fit.recommended_size, fit.alternate_size, confidence_bucket, fit.reason_codes)
+        if state == self._last_sizing_telemetry:
+            return
+        self._last_sizing_telemetry = state
+        self.session_log.event(
+            "fit_recommendation",
+            status=fit.status,
+            recommended_size=fit.recommended_size,
+            alternate_size=fit.alternate_size,
+            confidence_bucket=confidence_bucket,
+            reason_codes=list(fit.reason_codes),
+        )
 
     def run(self) -> None:
         self.setup_catalog()
@@ -617,19 +649,25 @@ class SmartMirrorAppV2(SmartMirrorApp):
             self.session_log.event("api_error", severity="warning", source="catalog", error=self.api.last_offline_error)
         self._load_kiosk_config(force=True)
         try:
-            camera, camera_backend = open_camera(
+            camera = open_rgbd_camera(
                 self.args.camera,
                 self.args.width,
                 self.args.height,
                 getattr(self.args, "camera_backend", "auto"),
+                str(self.kiosk_config.get("sizing_mode", "depth")),
+                bool(self.kiosk_config.get("depth_required", True)),
             )
         except Exception as exc:
             self.session_log.event("camera_error", severity="error", camera=self.args.camera, error=str(exc))
             raise
+        camera_backend = camera.backend_name
         print(f"Opened camera {self.args.camera} using {camera_backend} backend")
 
         width = int(camera.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(camera.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        if camera.depth_available:
+            self.calibration_path = self.data_dir / f"calibration-{camera.serial}-{width}x{height}.json"
+            self.calibration = self.calibration.load(self.calibration_path, self.args.reference_shoulder_cm)
         self.session_log.event("camera_opened", camera=self.args.camera, backend=camera_backend, width=width, height=height)
         pose_tracker = PoseTracker(Path(self.args.model), width, height)
         hand_tracker = HandTracker() if self.args.gestures else None
@@ -657,6 +695,9 @@ class SmartMirrorAppV2(SmartMirrorApp):
                     continue
                 if self.args.mirror_view:
                     frame = cv2.flip(frame, 1)
+                rgbd_frame = camera.latest
+                if rgbd_frame is not None and self.args.mirror_view:
+                    rgbd_frame = mirror_rgbd(rgbd_frame)
                 raw_frame = frame.copy()
 
                 now = time.monotonic()
@@ -706,14 +747,35 @@ class SmartMirrorAppV2(SmartMirrorApp):
                 garment_rendered = False
                 lower_body_required = False
                 if pose:
-                    shoulder_cm = self.calibration.estimate_cm(pose.shoulder_pixels)
-                    self.body = estimate_body_measurements(
-                        shoulder_cm,
-                        pose.shoulder_pixels,
-                        pose.hip_pixels,
-                        pose.torso_pixels,
-                    )
-                    self.recommendation = recommend_size(self.product.sizes, self.body)
+                    correction = self.calibration.depth_scale_correction if self.calibration.matches_camera(camera.serial, width, height) else 1.0
+                    vector = self.depth_burst.update(rgbd_frame if camera.depth_available else None, pose, now, correction)
+                    if vector is not None and str(self.kiosk_config.get("sizing_mode", "depth")) == "depth":
+                        self._live_yaw_deg = vector.yaw_deg
+                        self.depth_fit = recommend_fit(
+                            self.product.sizes,
+                            vector,
+                            self._cfg_int("fit_confidence_threshold", 75),
+                            self._cfg_float("max_live_yaw_deg", 25.0),
+                        )
+                        self._record_sizing_telemetry(self.depth_fit)
+                        self.body = BodyMeasurements(
+                            vector.shoulder_width_cm,
+                            vector.chest_width_cm,
+                            vector.waist_width_cm,
+                            vector.hip_width_cm,
+                            vector.torso_height_cm,
+                        )
+                        selected = next((size for size in self.product.sizes if self._size_label(size) == self.depth_fit.recommended_size), None)
+                        self.recommendation = SizeRecommendation(
+                            self.depth_fit.recommended_size,
+                            max(0.0, 1 - self.depth_fit.confidence / 100),
+                            self.depth_fit.confidence,
+                            selected,
+                        ) if self.depth_fit.status == "recommended" and selected is not None else None
+                    elif not camera.depth_available:
+                        self.depth_fit = FitRecommendation("unavailable", None, None, 0, ("depth_unavailable",))
+                        self._record_sizing_telemetry(self.depth_fit)
+                        self.recommendation = None
                     selected_size, _ = self.selected_size()
                     frame, garment_rendered = self._render_current_garment(frame, pose, selected_size)
                     lower_body_required = self._garment_type() in self.LOWER_GARMENT_TYPES and not garment_rendered
@@ -758,11 +820,7 @@ class SmartMirrorAppV2(SmartMirrorApp):
                     if len(self.hybrid.burst) >= burst_count or elapsed >= capture_duration:
                         self._submit_hybrid_batch(selected_size, now)
 
-                confidence = fit_confidence(
-                    pose.visibility if pose else 0.0,
-                    self.recommendation,
-                    self.calibration.calibrated,
-                )
+                confidence = self.depth_fit.confidence if camera.depth_available else 0
 
                 if pending_snapshot:
                     if garment_rendered:
@@ -820,6 +878,8 @@ class SmartMirrorAppV2(SmartMirrorApp):
                             ai_status=self.ai_tryon.status if self.ai_tryon.status != "idle" else "",
                             ai_result_url=self.ai_tryon.result_url,
                             ai_qr_image=self.ai_tryon.qr_image,
+                            sizing_status=self.depth_fit.status,
+                            alternate_size=self.depth_fit.alternate_size or "",
                         ),
                     )
 
@@ -833,7 +893,7 @@ class SmartMirrorAppV2(SmartMirrorApp):
                         self.product.formatted_price(),
                     )
                     if bool(getattr(self.args, "kiosk_health_hud", True)):
-                        draw_kiosk_health(frame, self.args.camera, camera_backend, self._current_fps, pose is not None, bool(hands))
+                        draw_kiosk_health(frame, self.args.camera, camera.backend_name, self._current_fps, pose is not None, bool(hands))
                 draw_privacy_notice(
                     frame,
                     str(self.kiosk_config.get("privacy_notice_mode", "off")),

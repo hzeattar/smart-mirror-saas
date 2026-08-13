@@ -29,8 +29,9 @@ class ProcessGarmentImage implements ShouldQueue
 
         $disk = Storage::disk(config('filesystems.default'));
         $outputPath = 'garments/textures/'.pathinfo($product->base_image_path, PATHINFO_FILENAME).'.png';
-        $service->remove($product->base_image_path, $outputPath);
+        $processor = $service->remove($product->base_image_path, $outputPath);
         $textureQa = $imageQa->fromBytes($disk->get($outputPath), 'texture');
+        $textureQa['model'] = $processor['model'] ?? 'local-rembg';
 
         $product->update([
             'texture_image_path' => $outputPath,
@@ -41,6 +42,8 @@ class ProcessGarmentImage implements ShouldQueue
             ],
             'background_removal_status' => BackgroundRemovalStatus::Completed,
             'processed_at' => now(),
+            'asset_review_status' => 'pending',
+            'asset_reviewed_at' => null,
         ]);
     }
 

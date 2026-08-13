@@ -27,6 +27,9 @@ class CatalogProduct:
     garment_type: str = "top"
     fit_profile: dict = field(default_factory=dict)
     texture_anchor: dict = field(default_factory=dict)
+    measurement_schema_version: int = 1
+    measurement_basis: str = "flat_garment"
+    readiness: dict = field(default_factory=dict)
 
     @classmethod
     def from_api(cls, item: dict) -> "CatalogProduct":
@@ -38,6 +41,9 @@ class CatalogProduct:
         values.setdefault("garment_type", "top")
         values.setdefault("fit_profile", {})
         values.setdefault("texture_anchor", {})
+        values.setdefault("measurement_schema_version", 1)
+        values.setdefault("measurement_basis", "flat_garment")
+        values.setdefault("readiness", {})
         return cls(**values)
 
     def formatted_price(self) -> str:

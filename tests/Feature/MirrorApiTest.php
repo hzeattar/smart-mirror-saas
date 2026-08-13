@@ -39,6 +39,7 @@ class MirrorApiTest extends TestCase
             'status' => ProductStatus::Active,
             'base_image_url' => '/demo-garments/real/shirt-front.png',
             'texture_image_url' => '/demo-garments/real/shirt-texture.png',
+            'asset_review_status' => 'approved',
             'image_qa' => ['base' => ['status' => 'ok'], 'texture' => ['status' => 'ok']],
         ]);
         foreach (['S', 'M', 'L', 'XL'] as $label) {

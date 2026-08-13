@@ -103,3 +103,11 @@ Use `--no-gestures` to disable hand tracking on low-power devices.
 The mirror HUD displays the product name, price, selected/recommended size, calibration state, gesture state and fit confidence. Physical measurements are estimates for product-size guidance, not tailoring-grade body measurements.
 
 Calibration is camera-specific. Repeat it whenever the camera position, focal length, zoom or resolution changes. Set `--reference-shoulder-cm` to the measured shoulder width used during calibration for better size recommendations.
+
+For the launch D455, install RealSense SDK 2.58.3 and run the rigid 500 mm reference-bar calibration once per camera serial and resolution:
+
+```powershell
+python calibrate_d455.py --width 640 --height 360 --reference-mm 500
+```
+
+The scale correction is saved per device. Without a usable D455, the kiosk keeps the OpenCV live overlay and reports sizing as unavailable.

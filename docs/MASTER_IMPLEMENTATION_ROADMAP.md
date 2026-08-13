@@ -37,6 +37,19 @@ At launch, `privacy_notice_mode=passive` shows a bilingual, non-blocking camera 
 
 ## Active release
 
+### Phase 2A — Depth sizing and product asset pipeline — complete in code, hardware validation pending
+
+- Private `garment-processor` service with an authenticated upload-only API, `rembg[cpu]==2.0.78`, one reused `birefnet-general` session and normalized 1024×1024 PNG output.
+- Explicit opaque/transparent coverage, content bounds and edge QA; administrator before/after preview and an approve/reject cutout gate.
+- `measurement_schema_version=1`, `measurement_basis=flat_garment`, category-specific required measurements and `inseam_length_cm` for lower garments.
+- Mirror catalogue exposes fit readiness and reasons and excludes incomplete active products.
+- RealSense D455 synchronized RGB/depth frames, aligned intrinsics, firmware guard, median-depth sampling, 3D deprojection, one-second burst repeatability and explainable recommendation abstention.
+- OpenCV fallback keeps the live experience running while exposing `Sizing unavailable`; raw centimetres and depth frames remain local memory only.
+- Multi-row piecewise-affine torso mesh, temporal head/hair/arm/hand occlusion and ±25° yaw fade.
+- Remote controls: `sizing_mode`, `fit_confidence_threshold`, `max_live_yaw_deg` and `depth_required`.
+
+Automated evidence on 2026-08-13: Laravel 35 tests/380 assertions, CV client 51 tests, garment processor 5 tests, Vite build and Pint passed. D455, 50-garment, 30-person fitter and sustained FPS benchmarks still require the physical pilot equipment and consented test cohort.
+
 ### Phase 2 — Single-mirror NVIDIA pilot — implementation complete, validation in progress
 
 Implemented on `codex/pilot-release`:

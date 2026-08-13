@@ -4,3 +4,4 @@ numpy>=1.26,<3
 requests>=2.32,<3
 Pillow>=10,<12
 qrcode>=8,<9
+pyrealsense2==2.58.3.10794; platform_system == "Windows"

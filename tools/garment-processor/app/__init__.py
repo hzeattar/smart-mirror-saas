@@ -1,0 +1,1 @@
+"""Private garment cutout service."""
