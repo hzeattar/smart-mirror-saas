@@ -119,3 +119,7 @@ cv_client\run_kiosk.ps1
 - Phase 2: Laravel REST API, mirror auth, catalog, orders and image-processing queue — complete.
 - Phase 3: optimized OpenCV + MediaPipe client with calibration and overlay — complete.
 - Phase 4: Vue Composition API product management and real-time order dashboard — complete.
+
+## Ecosystem link
+
+[![Explore RustChain](https://img.shields.io/badge/Explore-RustChain-orange)](https://rustchain.org)
